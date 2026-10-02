@@ -1,0 +1,13 @@
+venv/
+tools/snapshots/
+data/raw/
+data/interim/
+data/processed/
+models/*.pkl
+__pycache__/
+.ipynb_checkpoints/
+.pytest_cache/
+.DS_Store
+.env
+data/*.duckdb
+models/*.joblib

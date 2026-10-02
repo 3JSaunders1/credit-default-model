@@ -1,0 +1,3 @@
+model,AUC,Gini,KS,mean_predicted_PD,actual_rate
+Logistic regression,0.655,0.31,0.223,0.132,0.149
+XGBoost,0.655,0.309,0.224,0.127,0.149

@@ -1,0 +1,122 @@
+    year   loans  default_rate_pct
+0   2007     251              17.9
+1   2008    1562              15.8
+2   2009    4716              12.6
+3   2010    8466               9.9
+4   2011   14101              10.6
+5   2012   43470              13.6
+6   2013  100422              12.3
+7   2014  162570              13.7
+8   2015  283026              14.9
+9   2016  232353              19.8
+10  2017  128538              20.0
+11  2018   41268              13.2
+Saved /Users/johnsaunders/Desktop/credit_default_model_project/data/processed/loans.parquet
+Train: 306,462 loans, default rate 13.2%
+Test:  283,026 loans, default rate 14.9%
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [0] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [0, 1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+XGBoost stopped at 207 trees
+pd_logit: test AUC = 0.655, Gini = 0.310
+pd_xgb: test AUC = 0.655, Gini = 0.309
+
+=== Out-of-time test performance (2015 vintage) ===
+              model   AUC  Gini    KS  mean_predicted_PD  actual_rate
+Logistic regression 0.655 0.310 0.223              0.132        0.149
+            XGBoost 0.655 0.309 0.224              0.127        0.149
+
+=== Calibration by risk decile (logistic regression) ===
+        loans  predicted  actual
+bucket                          
+0       28303     0.0417  0.0428
+1       28303     0.0681  0.0760
+2       28302     0.0854  0.0976
+3       28303     0.1004  0.1136
+4       28302     0.1150  0.1355
+5       28303     0.1305  0.1485
+6       28302     0.1477  0.1751
+7       28303     0.1686  0.1923
+8       28302     0.1979  0.2259
+9       28303     0.2655  0.2813
+
+=== Score PSI, train (2012–2014) vs. test (2015): 0.001 ===
+
+Saved figures and tables to /Users/johnsaunders/Desktop/credit_default_model_project/reports/figures
+2014 vintage: predicted 13.50%, actual 13.73%
+Intercept shift (log-odds): +0.020
+
+=== 2015 out-of-time calibration ===
+Actual default rate:        14.89%
+Mean PD before recalibration: 13.21%
+Mean PD after recalibration:  13.43%
+
+Saved plot and recalibration to /Users/johnsaunders/Desktop/credit_default_model_project/reports/figures and /Users/johnsaunders/Desktop/credit_default_model_project/models
+Loaded national series: ['UNRATE', 'FEDFUNDS']
+Loaded state unemployment for 51 states
+Share of loans missing state unemployment: 0.70%
+Saved /Users/johnsaunders/Desktop/credit_default_model_project/data/processed/loans_macro.parquet
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+
+=== Base vs. macro-enhanced model (2015 out-of-time) ===
+       model   AUC  Gini mean_PD actual
+        Base 0.655  0.31  13.21% 14.89%
+Base + macro 0.655  0.31  14.09% 14.89%
+
+=== Macro odds ratios (per 1 SD) ===
+num__unemployment_rate      0.951
+num__fed_funds_rate         1.023
+num__state_unemp            1.034
+num__state_unemp_chg_12m    1.007
+
+=== Calibration by decile ===
+        base_pred  macro_pred  actual
+bucket                               
+0          0.0417      0.0452  0.0428
+1          0.0681      0.0735  0.0760
+2          0.0854      0.0919  0.0976
+3          0.1004      0.1078  0.1136
+4          0.1150      0.1232  0.1355
+5          0.1305      0.1395  0.1485
+6          0.1477      0.1577  0.1751
+7          0.1686      0.1796  0.1923
+8          0.1979      0.2102  0.2259
+9          0.2655      0.2800  0.2813
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [0, 1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [0] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [0, 1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+
+=== Top logistic regression effects (odds ratio per 1 SD for numeric) ===
+                        feature   coef  odds_ratio
+    cat__purpose_small_business  0.874       2.398
+           cat__purpose_medical  0.392       1.479
+            num__fico_range_low -0.359       0.699
+cat__purpose_infrequent_sklearn  0.341       1.406
+             cat__purpose_other  0.304       1.356
+       cat__home_ownership_RENT  0.263       1.301
+       cat__purpose_credit_card -0.179       0.836
+            num__inq_last_6mths  0.167       1.181
+            num__log_annual_inc -0.160       0.852
+            num__loan_to_income  0.149       1.161
+
+=== Top 5 reasons for the highest-risk loan in the sample ===
+num__loan_to_income                0.693
+num__fico_range_low                0.385
+num__dti                           0.208
+cat__purpose_infrequent_sklearn    0.196
+num__revol_util                    0.183
+
+=== Monotonic constraints ===
+Unconstrained XGBoost AUC: 0.655
+Monotonic XGBoost AUC:     0.654
+
+Saved explainability figures to /Users/johnsaunders/Desktop/credit_default_model_project/reports/figures
