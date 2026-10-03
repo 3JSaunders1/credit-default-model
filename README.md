@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml/badge.svg)](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml)
 
-An end-to-end probability of default (PD) model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: out-of-time validation, discrimination and calibration metrics, population stability monitoring, recalibration, macroeconomic features from the FRED API, explainability, automated tests, and an honest account of limitations.
+An end-to-end probability of default (PD) model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: out-of-time validation, discrimination and calibration metrics, population stability monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
 
 ---
 
@@ -19,7 +19,8 @@ An end-to-end probability of default (PD) model built on Lending Club loan data,
 | **Recalibration** | Recalibrating on the latest available vintage (2014) moved the mean PD only from 13.2% to 13.4% |
 | **Macro features** | Cut the calibration gap roughly in half (14.1% vs. 14.9% actual), but national unemployment showed a counterintuitive, cycle-driven sign that should not be trusted in production |
 | **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income). Monotonic constraints cost essentially **no** AUC (0.654 vs. 0.655). |
-| **Engineering** | 21 automated tests run on every push, pinned dependencies, a one-command pipeline, and timestamped run archives |
+| **Scaling** | The data pipeline is also implemented in **PySpark**, reconciled against the DuckDB SQL version across 1,020,743 loans with **zero discrepancies** |
+| **Engineering** | 22 automated tests run on every push, pinned dependencies, a one-command pipeline, and timestamped run archives |
 
 ---
 
@@ -90,8 +91,9 @@ The jump in 2016–2017 is largely an artifact. The data ends in late 2018, so 3
 ### Pipeline
 ```
 Kaggle API → DuckDB (SQL) → features → models → evaluation → recalibration
-FRED API  → DuckDB (SQL join) → macro comparison
-                                → explainability
+           → PySpark      → parity check against DuckDB
+FRED API   → DuckDB (SQL join) → macro comparison
+                                 → explainability
 ```
 
 1. **Download** (`download.py`): pulls only the accepted-loans file through the Kaggle API.
@@ -103,6 +105,7 @@ FRED API  → DuckDB (SQL join) → macro comparison
 7. **Macro data** (`fred.py`, `sql/02_add_macro.sql`): pulls FRED series and joins them to loans in SQL.
 8. **Macro comparison** (`compare_macro.py`): base vs. macro-enhanced logistic regression.
 9. **Explainability** (`explain.py`): odds ratios, SHAP values, partial dependence, and monotonic constraints.
+10. **Spark pipeline and parity check** (`spark_pipeline.py`, `compare_engines.py`): rebuilds the loan table in PySpark and reconciles it against the DuckDB version.
 
 ### Features
 **Used (all known at origination):**
@@ -328,8 +331,21 @@ The constraints cost essentially **nothing** in accuracy while guaranteeing intu
 
 ## 9. Engineering and Reproducibility
 
+### Scaling with PySpark
+The loan-table pipeline is also implemented in **PySpark** (`spark_pipeline.py`), mirroring the DuckDB SQL version: the same filters (completed, 36-month loans), the same target definition, and the same column types, using an explicit schema rather than type inference.
+
+A parity check (`compare_engines.py`) reconciles the two engines year by year:
+
+| Check | Result |
+|---|---|
+| Loans processed | 1,020,743 |
+| Loan-count difference | **0** |
+| Max default-rate difference | **0.000 pp** |
+
+The two pipelines produce identical results, so the modeling steps can run on either engine. Spark runs locally here (`local[*]`), but the same code scales to a cluster for larger datasets.
+
 ### Automated tests
-**21 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**:
+**22 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
 
 | Test file | What it checks |
 |---|---|
@@ -337,6 +353,7 @@ The constraints cost essentially **nothing** in accuracy while guaranteeing intu
 | `test_metrics.py` | PSI is zero for identical distributions, flags large shifts, and is never negative; KS and AUC/Gini behave correctly; calibration tables account for every loan |
 | `test_recalibration.py` | The intercept shift hits its target, preserves ranking, does nothing when already calibrated, and keeps PDs between 0 and 1 |
 | `test_features.py` | Employment length parsing, missing indicators, safe handling of zero income, and no modification of input data |
+| `test_spark_pipeline.py` | The Spark pipeline keeps only completed 36-month loans, sets the default flag correctly, and parses issue dates |
 
 Tests use small synthetic data, so they run in seconds without downloading the dataset.
 
@@ -357,7 +374,7 @@ This makes every result traceable to the exact code and settings that produced i
 
 ### Other practices
 - **Pinned dependencies** in `requirements.txt` for exact reproducibility.
-- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make explain`, and so on).
+- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make explain`, `make spark`, and so on).
 - **A model card** (`docs/model_card.md`) summarizing intended use, performance, limitations, and a monitoring plan with review triggers.
 - **Credentials kept out of the code**: the Kaggle token lives in `~/.kaggle/`, and the FRED key in an untracked `.env` file.
 
@@ -397,6 +414,7 @@ This makes every result traceable to the exact code and settings that produced i
 
 **Engineering**
 - Share a single preprocessing definition between `train.py` and `compare_macro.py`.
+- Extend the PySpark implementation to feature engineering and model scoring.
 - A **Streamlit dashboard** for exploring predictions, calibration, and monitoring results.
 
 ---
@@ -406,7 +424,7 @@ This makes every result traceable to the exact code and settings that produced i
 ```
 credit_default_model_project/
 ├── .github/workflows/
-│   └── tests.yml              # runs the test suite on every push
+│   └── tests.yml              # runs the test suite on every push (Python 3.11, Java 17)
 ├── data/                      # not tracked in Git
 │   ├── raw/                   # downloaded Lending Club data
 │   └── processed/             # parquet tables and test predictions
@@ -429,12 +447,15 @@ credit_default_model_project/
 │   ├── recalibrate.py         # intercept recalibration on the 2014 vintage
 │   ├── fred.py                # FRED API pull and SQL macro join
 │   ├── compare_macro.py       # base vs. macro-enhanced model comparison
-│   └── explain.py             # odds ratios, SHAP, partial dependence, monotonic constraints
+│   ├── explain.py             # odds ratios, SHAP, partial dependence, monotonic constraints
+│   ├── spark_pipeline.py      # PySpark version of the loan-table pipeline
+│   └── compare_engines.py     # DuckDB vs. Spark parity check
 ├── tests/
 │   ├── test_features.py
 │   ├── test_leakage.py
 │   ├── test_metrics.py
-│   └── test_recalibration.py
+│   ├── test_recalibration.py
+│   └── test_spark_pipeline.py
 ├── tools/
 │   └── export_codebase.py     # prints the project tree and saves code snapshots
 ├── Makefile                   # one-command pipeline and run archiving
@@ -453,6 +474,7 @@ credit_default_model_project/
 python3 setup_env.py
 source venv/bin/activate
 ```
+PySpark also requires **Java 17**. On macOS, for example: `brew install --cask corretto@17`, then `export JAVA_HOME="$(/usr/libexec/java_home -v 17)"`.
 
 **2. Add credentials**
 - **Kaggle:** create a Kaggle API token and store it in `~/.kaggle/` with permissions set to `600`.
@@ -469,15 +491,20 @@ make all
 ```
 This builds the data, trains and evaluates the models, recalibrates, adds macro features, runs explainability, and archives everything to `reports/runs/<timestamp>/`.
 
-**5. Run the tests**
+**5. Run the Spark pipeline and parity check**
+```bash
+make spark
+```
+
+**6. Run the tests**
 ```bash
 make test
 ```
 
-Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, and `make explain`.
+Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, and `make spark`.
 
 ---
 
 ## 14. Tech Stack
 
-Python · SQL (DuckDB) · pandas · NumPy · SciPy · scikit-learn · XGBoost · SHAP · Matplotlib · pytest · GitHub Actions · Make · Kaggle API · FRED API · Parquet
+Python · SQL (DuckDB) · PySpark · pandas · NumPy · SciPy · scikit-learn · XGBoost · SHAP · Matplotlib · pytest · GitHub Actions · Make · Kaggle API · FRED API · Parquet

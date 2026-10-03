@@ -78,3 +78,5 @@ webencodings==0.6.1
 websockets==16.1.1
 wrapt==2.5.0
 xgboost==3.2.0
+pyspark==4.2.0
+py4j==0.10.9.9

@@ -16,6 +16,12 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 

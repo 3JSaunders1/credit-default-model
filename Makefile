@@ -5,7 +5,7 @@ RUN_ID  := $(shell date +%Y%m%d_%H%M%S)
 RUN_DIR := reports/runs/$(RUN_ID)
 LOG     := $(RUN_DIR)/run_log.txt
 
-.PHONY: all run-dir download data features train evaluate recalibrate macro explain archive test
+.PHONY: all run-dir download data features train evaluate recalibrate macro explain spark archive test
 
 all: run-dir data features train evaluate recalibrate macro explain archive
 	@echo "Run complete: $(RUN_DIR)"
@@ -37,6 +37,10 @@ macro: run-dir
 
 explain: run-dir
 	python -m src.credit_default.explain 2>&1 | tee -a $(LOG)
+
+spark: run-dir
+	python -m src.credit_default.spark_pipeline 2>&1 | tee -a $(LOG)
+	python -m src.credit_default.compare_engines 2>&1 | tee -a $(LOG)
 
 archive: run-dir
 	cp reports/figures/* $(RUN_DIR)/
