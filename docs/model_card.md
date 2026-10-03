@@ -19,7 +19,7 @@ validation practices. Not intended for real credit decisions.
 ## Performance (2015 out-of-time)
 - AUC 0.655, Gini 0.31, KS 0.22
 - Mean predicted PD 13.2% vs. actual 14.9%
-  - 13.4% after recalibration on the 2014 vintage
+  - 13.4% after recalibration on the 2014 vintage (13.3% under a strict design with 2014 held out)
   - 14.1% with macro features
 - Score PSI 0.001
 - Monotonic XGBoost AUC 0.654 vs. 0.655 unconstrained
@@ -30,7 +30,6 @@ validation practices. Not intended for real credit decisions.
 - National unemployment shows a cycle-driven sign and is unsafe for production
 - Approved loans only (no reject inference)
 - Single out-of-time vintage
-- Recalibration vintage (2014) overlaps the training data
 
 ## Monitoring plan
 - **Population stability:** score and feature-level PSI (watch above 0.10, investigate above 0.25)
