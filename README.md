@@ -20,7 +20,7 @@ An end-to-end probability of default (PD) model built on Lending Club loan data,
 | **Macro features** | Cut the calibration gap roughly in half (14.1% vs. 14.9% actual), but national unemployment showed a counterintuitive, cycle-driven sign that should not be trusted in production |
 | **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income). Monotonic constraints cost essentially **no** AUC (0.654 vs. 0.655). |
 | **Scaling** | The data pipeline is also implemented in **PySpark**, reconciled against the DuckDB SQL version across 1,020,743 loans with **zero discrepancies** |
-| **Engineering** | 22 automated tests run on every push, pinned dependencies, a one-command pipeline, and timestamped run archives |
+| **Engineering** | 25 automated tests run on every push, shared preprocessing across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
 
 ---
 
@@ -345,7 +345,7 @@ A parity check (`compare_engines.py`) reconciles the two engines year by year:
 The two pipelines produce identical results, so the modeling steps can run on either engine. Spark runs locally here (`local[*]`), but the same code scales to a cluster for larger datasets.
 
 ### Automated tests
-**22 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
+**25 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
 
 | Test file | What it checks |
 |---|---|
@@ -354,6 +354,7 @@ The two pipelines produce identical results, so the modeling steps can run on ei
 | `test_recalibration.py` | The intercept shift hits its target, preserves ranking, does nothing when already calibrated, and keeps PDs between 0 and 1 |
 | `test_features.py` | Employment length parsing, missing indicators, safe handling of zero income, and no modification of input data |
 | `test_spark_pipeline.py` | The Spark pipeline keeps only completed 36-month loans, sets the default flag correctly, and parses issue dates |
+| `test_preprocessing.py` | Every script uses the same preprocessing definition, so encoder settings can't drift between model comparisons |
 
 Tests use small synthetic data, so they run in seconds without downloading the dataset.
 
@@ -373,6 +374,7 @@ reports/
 This makes every result traceable to the exact code and settings that produced it.
 
 ### Other practices
+- **Shared preprocessing:** a single definition of the preprocessing and benchmark logistic model (`make_preprocessor` and `make_logit` in `train.py`), reused by every script, so comparisons such as base vs. macro-enhanced stay consistent.
 - **Pinned dependencies** in `requirements.txt` for exact reproducibility.
 - **One-command pipeline** with `make all`, plus individual steps (`make train`, `make explain`, `make spark`, and so on).
 - **A model card** (`docs/model_card.md`) summarizing intended use, performance, limitations, and a monitoring plan with review triggers.
@@ -413,7 +415,6 @@ This makes every result traceable to the exact code and settings that produced i
 - A **full expected loss** estimate (PD × LGD × EAD) using recovery data, as a step toward a CECL-style framework.
 
 **Engineering**
-- Share a single preprocessing definition between `train.py` and `compare_macro.py`.
 - Extend the PySpark implementation to feature engineering and model scoring.
 - A **Streamlit dashboard** for exploring predictions, calibration, and monitoring results.
 
@@ -456,6 +457,7 @@ credit_default_model_project/
 │   ├── test_metrics.py
 │   ├── test_recalibration.py
 │   └── test_spark_pipeline.py
+|   └── test_processing.py
 ├── tools/
 │   └── export_codebase.py     # prints the project tree and saves code snapshots
 ├── Makefile                   # one-command pipeline and run archiving

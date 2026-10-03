@@ -17,10 +17,24 @@ CATEGORICAL = ["home_ownership", "purpose"]
 TARGET = "default_flag"
 
 
-def make_preprocessor() -> ColumnTransformer:
+def make_preprocessor(numeric: list[str] | None = None,
+                      categorical: list[str] | None = None) -> ColumnTransformer:
+    """Single source of truth for preprocessing, shared by every script."""
+    numeric = NUMERIC if numeric is None else numeric
+    categorical = CATEGORICAL if categorical is None else categorical
     return ColumnTransformer([
-        ("num", StandardScaler(), NUMERIC),
-        ("cat", OneHotEncoder(handle_unknown="infrequent_if_exist", min_frequency=0.01, drop="first"), CATEGORICAL),
+        ("num", StandardScaler(), numeric),
+        ("cat", OneHotEncoder(handle_unknown="infrequent_if_exist",
+                              min_frequency=0.01, drop="first"), categorical),
+    ])
+
+
+def make_logit(numeric: list[str] | None = None,
+               categorical: list[str] | None = None) -> Pipeline:
+    """The benchmark logistic regression, with shared preprocessing."""
+    return Pipeline([
+        ("prep", make_preprocessor(numeric, categorical)),
+        ("model", LogisticRegression(max_iter=1000)),
     ])
 
 
@@ -31,10 +45,7 @@ def main():
     X_test, y_test = test[NUMERIC + CATEGORICAL], test[TARGET]
 
     # --- Benchmark: logistic regression ---
-    logit = Pipeline([
-        ("prep", make_preprocessor()),
-        ("model", LogisticRegression(max_iter=1000)),
-    ])
+    logit = make_logit()
     logit.fit(X_train, y_train)
 
     # --- Challenger: XGBoost with time-aware early stopping ---

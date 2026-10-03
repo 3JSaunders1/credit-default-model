@@ -1,25 +1,13 @@
 """Compare logistic regression with and without macro features on the 2015 out-of-time test."""
 import numpy as np
 import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from src.credit_default.config import DATA_DIR, FIG_DIR
 from src.credit_default.features import clean, split
-from src.credit_default.train import NUMERIC, CATEGORICAL, TARGET
+from src.credit_default.train import NUMERIC, CATEGORICAL, TARGET, make_logit
 from src.credit_default.evaluate import calibration_table
 
 MACRO = ["unemployment_rate", "fed_funds_rate", "state_unemp", "state_unemp_chg_12m"]
-
-
-def make_model(numeric: list[str]) -> Pipeline:
-    prep = ColumnTransformer([
-        ("num", StandardScaler(), numeric),
-        ("cat", OneHotEncoder(handle_unknown="infrequent_if_exist", min_frequency=0.01, drop="first"), CATEGORICAL),
-    ])
-    return Pipeline([("prep", prep), ("model", LogisticRegression(max_iter=1000))])
 
 
 def main():
@@ -31,19 +19,20 @@ def main():
     train, test = train.fillna(medians), test.fillna(medians)
     y = test[TARGET]
 
-    results, preds = [], {}
+    results, preds, models = [], {}, {}
     for name, numeric in [("Base", NUMERIC), ("Base + macro", NUMERIC + MACRO)]:
-        model = make_model(numeric).fit(train[numeric + CATEGORICAL], train[TARGET])
+        model = make_logit(numeric).fit(train[numeric + CATEGORICAL], train[TARGET])
         p = model.predict_proba(test[numeric + CATEGORICAL])[:, 1]
-        preds[name] = p
+        models[name], preds[name] = model, p
         auc = roc_auc_score(y, p)
         results.append({"model": name, "AUC": round(auc, 3), "Gini": round(2 * auc - 1, 3),
                         "mean_PD": f"{p.mean():.2%}", "actual": f"{y.mean():.2%}"})
 
-        if name == "Base + macro":
-            names = model.named_steps["prep"].get_feature_names_out()
-            coefs = pd.Series(model.named_steps["model"].coef_[0], index=names)
-            macro_or = np.exp(coefs[[f"num__{m}" for m in MACRO]]).round(3)
+    # Macro odds ratios from the macro-enhanced model
+    macro_model = models["Base + macro"]
+    names = macro_model.named_steps["prep"].get_feature_names_out()
+    coefs = pd.Series(macro_model.named_steps["model"].coef_[0], index=names)
+    macro_or = np.exp(coefs[[f"num__{m}" for m in MACRO]]).round(3)
 
     print("\n=== Base vs. macro-enhanced model (2015 out-of-time) ===")
     print(pd.DataFrame(results).to_string(index=False))
