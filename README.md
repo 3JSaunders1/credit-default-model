@@ -16,11 +16,11 @@ An end-to-end probability of default (PD) model built on Lending Club loan data,
 | **Calibration** | The base model **underpredicts** 2015 defaults: 13.2% predicted vs. 14.9% actual |
 | **Population stability** | Score PSI of **0.001**: no meaningful shift in the borrower population |
 | **Main insight** | The 2015 miss is **concept drift, not data drift**. Borrowers looked the same, but defaulted more. PSI alone would not have caught it. |
-| **Recalibration** | Recalibrating on the latest available vintage (2014) moved the mean PD only from 13.2% to 13.4% |
+| **Recalibration** | Two designs tested, including a strict 2014 holdout. Both moved the 2015 mean PD to only about 13.4% (vs. 14.9% actual), confirming the remaining gap is genuine concept drift |
 | **Macro features** | Cut the calibration gap roughly in half (14.1% vs. 14.9% actual), but national unemployment showed a counterintuitive, cycle-driven sign that should not be trusted in production |
 | **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income). Monotonic constraints cost essentially **no** AUC (0.654 vs. 0.655). |
 | **Scaling** | The data pipeline is also implemented in **PySpark**, reconciled against the DuckDB SQL version across 1,020,743 loans with **zero discrepancies** |
-| **Engineering** | 25 automated tests run on every push, shared preprocessing across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
+| **Engineering** | 26 automated tests run on every push, shared preprocessing across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
 
 ---
 
@@ -101,7 +101,7 @@ FRED API   → DuckDB (SQL join) → macro comparison
 3. **Feature engineering** (`features.py`): cleaning, engineered features, imputation, and the out-of-time split.
 4. **Training** (`train.py`): logistic regression benchmark and XGBoost challenger.
 5. **Evaluation** (`evaluate.py`): AUC, Gini, KS, calibration, ROC, and PSI.
-6. **Recalibration** (`recalibrate.py`): intercept adjustment using the most recent fully observed vintage.
+6. **Recalibration** (`recalibrate.py`): intercept adjustment, comparing the original design with a strict design that holds out the 2014 vintage.
 7. **Macro data** (`fred.py`, `sql/02_add_macro.sql`): pulls FRED series and joins them to loans in SQL.
 8. **Macro comparison** (`compare_macro.py`): base vs. macro-enhanced logistic regression.
 9. **Explainability** (`explain.py`): odds ratios, SHAP values, partial dependence, and monotonic constraints.
@@ -206,19 +206,27 @@ Together, these point to **concept drift**: the *relationship* between borrower 
 
 ## 6. Recalibration
 
-When scoring 2015 loans, the most recent fully observed vintage would be **2014**. The model's baseline was recalibrated using only that vintage, through **calibration-in-the-large**: a single intercept shift in log-odds, which preserves the ranking and AUC while adjusting the probability levels.
+When scoring 2015 loans, the most recent fully observed vintage would be **2014**. The model's baseline was recalibrated using that vintage through **calibration-in-the-large**: a single intercept shift in log-odds, which preserves the ranking and AUC while adjusting the probability levels.
 
-On the 2014 vintage, the model predicted **13.50%** against an actual **13.73%**, giving an intercept shift of **+0.020** in log-odds.
+Two designs were compared:
 
-| | Mean PD |
-|---|---|
-| Actual 2015 default rate | 14.89% |
-| Before recalibration | 13.21% |
-| After recalibration (2014 vintage) | 13.43% |
+- **Original:** the production model, trained on 2012–2014, recalibrated on 2014. Because 2014 was part of training, the model had already seen it.
+- **Strict:** a separate model trained on **2012–2013 only**, recalibrated on 2014 as a **true holdout** the model never saw, then applied to 2015.
 
-![Calibration before and after](reports/figures/calibration_recalibrated.png)
+| Design | 2014 predicted | 2014 actual | Shift (log-odds) | 2015 before | 2015 after | 2015 AUC |
+|---|---|---|---|---|---|---|
+| Original (2014 in training) | 13.50% | 13.73% | +0.020 | 13.21% | 13.43% | 0.655 |
+| Strict (2014 held out) | 13.02% | 13.73% | +0.064 | 12.64% | 13.33% | 0.651 |
 
-**Interpretation:** recalibrating on the latest available data narrowed the gap only slightly. The 2014 vintage was already part of the training data, and its default rate was close to the model's predictions, so there was little to correct. The remaining gap of roughly 1.5 percentage points reflects concept drift that was **not visible in any default outcomes available before 2015**. Recalibration on recent data helps, but it cannot anticipate a shift that has not yet appeared in realized defaults.
+![Calibration across recalibration designs](reports/figures/calibration_recalibrated.png)
+
+**Interpretation:**
+- **The strict design produced a correction about three times larger.** A model that never saw 2014 underpredicted it more, so the shift was larger. The original design's small shift was partly an artifact of 2014 being in its training data.
+- **Both designs land at about the same 2015 estimate,** 13.3–13.4% against an actual 14.89%. The strict model starts lower, having learned from lower-default years with less data, and its larger shift brings it back to roughly the same level.
+- **The remaining gap of about 1.5 percentage points is therefore genuine concept drift,** not a byproduct of the recalibration design. Even a properly held-out recalibration cannot anticipate a shift that has not yet appeared in realized defaults.
+- **The strict model's AUC is slightly lower** (0.651 vs. 0.655), consistent with training on about 40% less data.
+
+One note on the strict design: missing feature values in the training data were imputed with medians computed over all of 2012–2014. This affects only feature fill-in values, not outcomes, so no default information from 2014 leaks into the strict model.
 
 ---
 
@@ -345,13 +353,13 @@ A parity check (`compare_engines.py`) reconciles the two engines year by year:
 The two pipelines produce identical results, so the modeling steps can run on either engine. Spark runs locally here (`local[*]`), but the same code scales to a cluster for larger datasets.
 
 ### Automated tests
-**25 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
+**26 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
 
 | Test file | What it checks |
 |---|---|
 | `test_leakage.py` | No post-origination fields in features or SQL, Lending Club model outputs excluded, target not used as a feature, and a strict time split with no overlap |
 | `test_metrics.py` | PSI is zero for identical distributions, flags large shifts, and is never negative; KS and AUC/Gini behave correctly; calibration tables account for every loan |
-| `test_recalibration.py` | The intercept shift hits its target, preserves ranking, does nothing when already calibrated, and keeps PDs between 0 and 1 |
+| `test_recalibration.py` | The intercept shift hits its target, preserves ranking, does nothing when already calibrated, and keeps PDs between 0 and 1; the recalibration holdout is fully separate from the fit period |
 | `test_features.py` | Employment length parsing, missing indicators, safe handling of zero income, and no modification of input data |
 | `test_spark_pipeline.py` | The Spark pipeline keeps only completed 36-month loans, sets the default flag correctly, and parses issue dates |
 | `test_preprocessing.py` | Every script uses the same preprocessing definition, so encoder settings can't drift between model comparisons |
@@ -385,9 +393,8 @@ This makes every result traceable to the exact code and settings that produced i
 ## 10. Limitations
 
 - **Modest discrimination.** An AUC of 0.655 reflects an independent model using application data only. Lending Club's grade and interest rate, which were deliberately excluded, carry substantial predictive information. Macro features did not improve ranking.
-- **Residual miscalibration.** The base model underpredicts 2015 defaults by about 1.7 percentage points. Recalibration reduced this only slightly, and the macro-enhanced model still underpredicts by about 0.8 points.
+- **Residual miscalibration.** The base model underpredicts 2015 defaults by about 1.7 percentage points. Recalibration, under both the original and strict designs, reduced this only to about 1.5 points, and the macro-enhanced model still underpredicts by about 0.8 points.
 - **Untrustworthy national macro relationship.** National unemployment's coefficient reflects a single phase of the credit cycle, estimated from roughly 36 monthly observations, and has a counterintuitive sign that would mislead the model in a downturn.
-- **Recalibration design.** The 2014 vintage used for recalibration was also part of the training data. A stricter design would train on 2012–2013 only and recalibrate on 2014 as a true holdout.
 - **Single out-of-time vintage.** Results are based on one test year. Performance across multiple future vintages and economic conditions has not been assessed.
 - **Lifetime target, not a 12-month PD.** The model predicts default over the 36-month term, which differs from the 12-month PDs common in some regulatory and accounting contexts. It is closer in spirit to a lifetime loss view, but it is not a full CECL model.
 - **Approved loans only.** The data includes only loans Lending Club approved, so the model has not seen rejected applicants. Using it for underwriting decisions would require addressing this selection bias (reject inference).
@@ -404,7 +411,6 @@ This makes every result traceable to the exact code and settings that produced i
 - Test macro conditions **over the life of the loan** in a stress-testing or scenario framework, rather than at origination only.
 
 **Calibration and monitoring**
-- A **stricter recalibration design**: train on 2012–2013 and recalibrate on a 2014 holdout.
 - **Feature-level PSI** to monitor each input, not just the overall score.
 - **Rolling out-of-time evaluation** across multiple vintages to track performance stability over time.
 
@@ -443,9 +449,9 @@ credit_default_model_project/
 │   ├── download.py            # Kaggle API download
 │   ├── data.py                # SQL load into DuckDB
 │   ├── features.py            # cleaning, features, out-of-time split
-│   ├── train.py               # logistic regression and XGBoost
+│   ├── train.py               # shared preprocessing, logistic regression, and XGBoost
 │   ├── evaluate.py            # AUC, Gini, KS, calibration, ROC, PSI
-│   ├── recalibrate.py         # intercept recalibration on the 2014 vintage
+│   ├── recalibrate.py         # original and strict (2014 holdout) recalibration designs
 │   ├── fred.py                # FRED API pull and SQL macro join
 │   ├── compare_macro.py       # base vs. macro-enhanced model comparison
 │   ├── explain.py             # odds ratios, SHAP, partial dependence, monotonic constraints
@@ -455,9 +461,9 @@ credit_default_model_project/
 │   ├── test_features.py
 │   ├── test_leakage.py
 │   ├── test_metrics.py
+│   ├── test_preprocessing.py
 │   ├── test_recalibration.py
 │   └── test_spark_pipeline.py
-|   └── test_processing.py
 ├── tools/
 │   └── export_codebase.py     # prints the project tree and saves code snapshots
 ├── Makefile                   # one-command pipeline and run archiving
@@ -509,4 +515,4 @@ Individual steps can also be run on their own: `make data`, `make features`, `ma
 
 ## 14. Tech Stack
 
-Python · SQL (DuckDB) · PySpark · pandas · NumPy · SciPy · scikit-learn · XGBoost · SHAP · Matplotlib · pytest · GitHub Actions · Make · Kaggle API · FRED API · Parquet
+Python · SQL (DuckDB) · pandas · NumPy · SciPy · scikit-learn · XGBoost · SHAP · PySpark · Matplotlib · pytest · GitHub Actions · Make · Kaggle API · FRED API · Parquet
