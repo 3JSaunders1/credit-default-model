@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml/badge.svg)](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml)
 
-An end-to-end probability of default (PD) model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: out-of-time validation, discrimination and calibration metrics, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
+An end-to-end probability of default (PD) model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: out-of-time validation, discrimination and calibration metrics, a Weight of Evidence scorecard, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
 
 ---
 
@@ -13,6 +13,7 @@ An end-to-end probability of default (PD) model built on Lending Club loan data,
 | **Out-of-time AUC (2015 vintage)** | 0.655 (Gini 0.31, KS 0.22) |
 | **Risk separation** | Actual default rates rise from **4.3%** in the lowest-risk decile to **28.1%** in the highest, about **6.6x** |
 | **Logistic regression vs. XGBoost** | Virtually identical performance, so the interpretable model is preferred |
+| **WoE scorecard** | A classic points-based scorecard nearly matches the benchmark (AUC 0.651 vs. 0.655) using half the features, with every coefficient correctly signed |
 | **Calibration** | The base model **underpredicts** 2015 defaults: 13.2% predicted vs. 14.9% actual |
 | **Population stability** | Score PSI of **0.001**: no meaningful shift in the borrower population |
 | **Main insight** | The 2015 miss is **concept drift, not data drift**. Borrowers looked the same, but defaulted more. PSI alone would not have caught it. |
@@ -21,7 +22,7 @@ An end-to-end probability of default (PD) model built on Lending Club loan data,
 | **Macro features** | Cut the calibration gap roughly in half (14.1% vs. 14.9% actual), but national unemployment showed a counterintuitive, cycle-driven sign that should not be trusted in production |
 | **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income). Monotonic constraints cost essentially **no** AUC (0.654 vs. 0.655). |
 | **Scaling** | The data pipeline is also implemented in **PySpark**, reconciled against the DuckDB SQL version across 1,020,743 loans with **zero discrepancies** |
-| **Engineering** | 31 automated tests run on every push, shared preprocessing across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
+| **Engineering** | 36 automated tests run on every push, shared preprocessing across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
 
 ---
 
@@ -92,7 +93,7 @@ The jump in 2016–2017 is largely an artifact. The data ends in late 2018, so 3
 ### Pipeline
 ```
 Kaggle API → DuckDB (SQL) → features → models → evaluation → recalibration → monitoring
-           → PySpark      → parity check against DuckDB
+           → PySpark      → parity check against DuckDB          → WoE scorecard
 FRED API   → DuckDB (SQL join) → macro comparison
                                  → explainability
 ```
@@ -108,6 +109,7 @@ FRED API   → DuckDB (SQL join) → macro comparison
 9. **Explainability** (`explain.py`): odds ratios, SHAP values, partial dependence, and monotonic constraints.
 10. **Spark pipeline and parity check** (`spark_pipeline.py`, `compare_engines.py`): rebuilds the loan table in PySpark and reconciles it against the DuckDB version.
 11. **Monitoring report** (`monitor.py`): feature-level PSI, score PSI, AUC, and calibration by issue quarter, with traffic-light thresholds.
+12. **WoE scorecard** (`woe.py`): Weight of Evidence binning, information value selection, a logistic regression on WoE values, and a points-based scorecard.
 
 ### Features
 **Used (all known at origination):**
@@ -123,7 +125,7 @@ FRED API   → DuckDB (SQL join) → macro comparison
 
 ### Leakage controls
 - Only origination-time features, enforced by automated tests.
-- Imputation medians are computed on the **training data only** and then applied to the test set.
+- Imputation medians, WoE bins, and WoE values are computed on the **training data only** and then applied to the test set.
 - Preprocessing (scaling, encoding) is wrapped in a scikit-learn `Pipeline` / `ColumnTransformer`, so the same fitted transformations are applied consistently.
 - Recalibration uses only data that would be available at prediction time (the 2014 vintage), never the 2015 test outcomes.
 - Macro values use the **month before origination**, since monthly economic data is published with a lag.
@@ -140,6 +142,9 @@ FRED API   → DuckDB (SQL join) → macro comparison
 **Monotonic XGBoost (constrained challenger)**
 - The same configuration, with monotonic constraints so key risk drivers can only move predicted risk in the economically sensible direction.
 
+**WoE scorecard (traditional challenger)**
+- Features binned into up to ten quantile bins (or categories), converted to Weight of Evidence, filtered by information value, and fit with logistic regression, then scaled to points.
+
 ---
 
 ## 4. Results
@@ -152,6 +157,7 @@ All results are on the **2015 out-of-time test set** (283,026 loans).
 | Logistic regression | 0.655 | 0.310 | 0.223 | 13.2% | 14.9% |
 | XGBoost | 0.655 | 0.309 | 0.224 | 12.7% | 14.9% |
 | Monotonic XGBoost | 0.654 | — | — | — | 14.9% |
+| WoE scorecard | 0.651 | 0.302 | 0.218 | 13.1% | 14.9% |
 
 ![ROC curve](reports/figures/roc.png)
 
@@ -185,6 +191,50 @@ All results are on the **2015 out-of-time test set** (283,026 loans).
 | Train (2012–2014) vs. test (2015) | **0.001** |
 
 A PSI below 0.10 is conventionally considered stable. At 0.001, the score distribution is essentially unchanged.
+
+### Weight of Evidence scorecard
+A traditional retail credit scorecard (`woe.py`) was built as a transparent challenger. Each feature is split into up to ten quantile bins (or its categories, with those under 1% grouped), and each bin is replaced by its **Weight of Evidence**: `ln(share of good loans in the bin ÷ share of bad loans in the bin)`, so positive values indicate lower risk. Bins and WoE values are fit on training data only.
+
+**Information value (IV)** measures each feature's overall predictive power. Features below 0.02 were dropped:
+
+| Feature | IV | Strength |
+|---|---|---|
+| FICO score | 0.132 | Medium |
+| Log annual income | 0.087 | Weak |
+| Debt-to-income | 0.048 | Weak |
+| Loan-to-income | 0.043 | Weak |
+| Home ownership | 0.039 | Weak |
+| Inquiries in the past 6 months | 0.029 | Weak |
+| Loan purpose | 0.022 | Weak |
+| Revolving utilization | 0.021 | Weak |
+
+Eight of sixteen features were kept. Employment length, loan amount, delinquencies, public records, open accounts, and the missing-value indicators fell below the threshold (full table: `reports/figures/woe_information_value.csv`).
+
+The scorecard uses the industry-standard scaling: **600 points corresponds to 50-to-1 odds against default, and every 20 points doubles the odds.** The points for every bin are in `reports/figures/woe_scorecard_points.csv`.
+
+| Score band (2015) | Loans | Actual default rate | Predicted PD |
+|---|---|---|---|
+| 484–524 (riskiest) | 28,303 | 27.5% | 25.6% |
+| 524–531 | 28,303 | 22.2% | 19.6% |
+| 531–536 | 28,302 | 19.5% | 16.8% |
+| 536–540 | 28,303 | 17.4% | 14.7% |
+| 540–544 | 28,302 | 15.2% | 13.0% |
+| 544–548 | 28,303 | 13.3% | 11.4% |
+| 548–553 | 28,302 | 11.6% | 10.0% |
+| 553–559 | 28,304 | 10.0% | 8.5% |
+| 559–568 | 28,301 | 7.7% | 6.8% |
+| 568–600 (safest) | 28,303 | 4.4% | 4.4% |
+
+![WoE score bands](reports/figures/woe_score_bands.png)
+
+**Interpretation:**
+- **The scorecard nearly matches the benchmark** (AUC 0.651 vs. 0.655) using **half the features**, with every bin's contribution visible in a points table. That is the classic scorecard tradeoff: a small loss in accuracy for full transparency.
+- **Every coefficient has the expected negative sign**, so each feature moves risk in the economically sensible direction.
+- **Default rates fall steadily with score**, from 27.5% in the riskiest band to 4.4% in the safest.
+- **The same underprediction appears in every band but the top one**, the concept drift found throughout this project.
+- **Most features are individually weak.** Only FICO reaches medium strength, which explains why overall discrimination is modest: no single application variable carries much signal.
+- **Loan purpose has low IV despite a large small-business effect.** Small business loans carry about 2.4 times the odds of default of car loans (Section 8), but they are a small share of loans, so they add little predictive power across the whole population. IV measures population-wide signal, not the size of an effect within a small group.
+- **The score range is narrow** (484 to 600, median 544), reflecting the modest spread of risk available from application data alone.
 
 ---
 
@@ -384,7 +434,7 @@ A parity check (`compare_engines.py`) reconciles the two engines year by year:
 The two pipelines produce identical results, so the modeling steps can run on either engine. Spark runs locally here (`local[*]`), but the same code scales to a cluster for larger datasets.
 
 ### Automated tests
-**31 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
+**36 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
 
 | Test file | What it checks |
 |---|---|
@@ -392,6 +442,7 @@ The two pipelines produce identical results, so the modeling steps can run on ei
 | `test_metrics.py` | PSI is zero for identical distributions, flags large shifts, and is never negative; KS and AUC/Gini behave correctly; calibration tables account for every loan |
 | `test_recalibration.py` | The intercept shift hits its target, preserves ranking, does nothing when already calibrated, and keeps PDs between 0 and 1; the recalibration holdout is fully separate from the fit period |
 | `test_monitor.py` | Categorical PSI is zero for identical mixes and flags large shifts; binary and text features use category shares rather than decile bins; traffic-light thresholds match the model card |
+| `test_woe.py` | Safer bins get positive WoE, IV is high for predictive features and near zero for unrelated ones, unseen categories get neutral WoE, out-of-range values are binned, and the score scale is exact (600 points at 50:1 odds, +20 points per doubling) |
 | `test_features.py` | Employment length parsing, missing indicators, safe handling of zero income, and no modification of input data |
 | `test_spark_pipeline.py` | The Spark pipeline keeps only completed 36-month loans, sets the default flag correctly, and parses issue dates |
 | `test_preprocessing.py` | Every script uses the same preprocessing definition, so encoder settings can't drift between model comparisons |
@@ -416,7 +467,7 @@ This makes every result traceable to the exact code and settings that produced i
 ### Other practices
 - **Shared preprocessing:** a single definition of the preprocessing and benchmark logistic model (`make_preprocessor` and `make_logit` in `train.py`), reused by every script, so comparisons such as base vs. macro-enhanced stay consistent.
 - **Pinned dependencies** in `requirements.txt` for exact reproducibility.
-- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make monitor`, `make spark`, and so on).
+- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make monitor`, `make woe`, `make spark`, and so on).
 - **A model card** (`docs/model_card.md`) summarizing intended use, performance, limitations, and a monitoring plan with review triggers.
 - **Credentials kept out of the code**: the Kaggle token lives in `~/.kaggle/`, and the FRED key in an untracked `.env` file.
 
@@ -424,9 +475,10 @@ This makes every result traceable to the exact code and settings that produced i
 
 ## 10. Limitations
 
-- **Modest discrimination.** An AUC of 0.655 reflects an independent model using application data only. Lending Club's grade and interest rate, which were deliberately excluded, carry substantial predictive information. Macro features did not improve ranking.
+- **Modest discrimination.** An AUC of 0.655 reflects an independent model using application data only. Lending Club's grade and interest rate, which were deliberately excluded, carry substantial predictive information. Macro features did not improve ranking, and the WoE analysis shows that only FICO reaches medium predictive strength on its own.
 - **Residual miscalibration.** The base model underpredicts 2015 defaults by about 1.7 percentage points. Recalibration, under both the original and strict designs, reduced this only to about 1.5 points, and the macro-enhanced model still underpredicts by about 0.8 points.
 - **Untrustworthy national macro relationship.** National unemployment's coefficient reflects a single phase of the credit cycle, estimated from roughly 36 monthly observations, and has a counterintuitive sign that would mislead the model in a downturn.
+- **WoE bins are not forced to be monotonic.** Bins come from quantiles rather than an optimized monotonic binning, so WoE may not rise or fall smoothly across every feature's bins.
 - **One out-of-time year.** Monitoring covers four out-of-time quarters, all from 2015. Performance across later vintages and different economic conditions has not been assessed.
 - **In-sample early warning.** The rising calibration gap in late 2014 appears in quarters that were part of the training data, so it illustrates what monitoring would show rather than a true out-of-sample early warning.
 - **Lifetime target, not a 12-month PD.** The model predicts default over the 36-month term, which differs from the 12-month PDs common in some regulatory and accounting contexts. It is closer in spirit to a lifetime loss view, but it is not a full CECL model.
@@ -444,7 +496,7 @@ This makes every result traceable to the exact code and settings that produced i
 - Test macro conditions **over the life of the loan** in a stress-testing or scenario framework, rather than at origination only.
 
 **Modeling**
-- A **Weight of Evidence (WoE) scorecard** version of the logistic regression, the classic approach in retail credit.
+- **Monotonic, optimized binning** for the WoE scorecard, so each feature's risk rises or falls smoothly across bins.
 - A **survival or discrete-time hazard model**, which handles loans that have not yet matured directly, rather than excluding later vintages.
 - **Hyperparameter tuning** with time-aware cross-validation.
 - A **full expected loss** estimate (PD × LGD × EAD) using recovery data, as a step toward a CECL-style framework.
@@ -485,6 +537,7 @@ credit_default_model_project/
 │   ├── compare_macro.py       # base vs. macro-enhanced model comparison
 │   ├── explain.py             # odds ratios, SHAP, partial dependence, monotonic constraints
 │   ├── monitor.py             # quarterly monitoring: feature PSI, score PSI, AUC, calibration
+│   ├── woe.py                 # Weight of Evidence binning, IV, and points-based scorecard
 │   ├── spark_pipeline.py      # PySpark version of the loan-table pipeline
 │   └── compare_engines.py     # DuckDB vs. Spark parity check
 ├── tests/
@@ -494,7 +547,8 @@ credit_default_model_project/
 │   ├── test_monitor.py
 │   ├── test_preprocessing.py
 │   ├── test_recalibration.py
-│   └── test_spark_pipeline.py
+│   ├── test_spark_pipeline.py
+│   └── test_woe.py
 ├── tools/
 │   └── export_codebase.py     # prints the project tree and saves code snapshots
 ├── LICENSE
@@ -529,7 +583,7 @@ make download
 ```bash
 make all
 ```
-This builds the data, trains and evaluates the models, recalibrates, adds macro features, runs explainability and the monitoring report, and archives everything to `reports/runs/<timestamp>/`.
+This builds the data, trains and evaluates the models, recalibrates, adds macro features, runs explainability, the monitoring report, and the WoE scorecard, and archives everything to `reports/runs/<timestamp>/`.
 
 **5. Run the Spark pipeline and parity check**
 ```bash
@@ -541,7 +595,7 @@ make spark
 make test
 ```
 
-Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, `make monitor`, and `make spark`.
+Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, `make monitor`, `make woe`, and `make spark`.
 
 ---
 

@@ -6,7 +6,7 @@ validation practices. Not intended for real credit decisions.
 
 ## Model
 - **Primary:** logistic regression
-- **Challengers:** XGBoost and monotonic XGBoost
+- **Challengers:** XGBoost, monotonic XGBoost, and a WoE scorecard
 - **Target:** lifetime charge-off on 36-month Lending Club loans
 - **Categorical reference groups:** mortgage holders (home ownership) and car loans (purpose)
 
@@ -23,6 +23,7 @@ validation practices. Not intended for real credit decisions.
   - 14.1% with macro features
 - Score PSI 0.001
 - Monotonic XGBoost AUC 0.654 vs. 0.655 unconstrained
+- WoE scorecard AUC 0.651 using 8 of 16 features
 
 ## Known limitations
 - Modest discrimination; Lending Club grade and interest rate deliberately excluded
