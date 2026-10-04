@@ -7,7 +7,7 @@ LOG     := $(RUN_DIR)/run_log.txt
 
 .PHONY: all run-dir download data features train evaluate recalibrate macro explain spark archive test
 
-all: run-dir data features train evaluate recalibrate macro explain monitor woe archive
+all: run-dir data features train evaluate recalibrate macro explain monitor woe el archive
 	@echo "Run complete: $(RUN_DIR)"
 
 run-dir:
@@ -43,6 +43,9 @@ monitor: run-dir
 
 woe: run-dir
 	python -m src.credit_default.woe 2>&1 | tee -a $(LOG)
+
+el: run-dir
+	python -m src.credit_default.expected_loss 2>&1 | tee -a $(LOG)
 
 tune: run-dir
 	python -m src.credit_default.tune 2>&1 | tee -a $(LOG)

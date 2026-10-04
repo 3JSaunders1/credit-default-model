@@ -25,6 +25,7 @@ validation practices. Not intended for real credit decisions.
 - Monotonic XGBoost AUC 0.659 vs. 0.660 unconstrained
 - WoE scorecard AUC 0.651 using 8 of 16 features
 - Time-aware tuning: 21 XGBoost configurations within 0.003 AUC; settings are not the bottleneck
+- Expected loss (PD × LGD × EAD): $234.5M predicted vs. $274.0M actual on the 2015 portfolio (−14%); LGD 88.9% and EAD ratio 57.5% held within about 1% of actual, so the shortfall came from PD
 
 ## Known limitations
 - Modest discrimination; Lending Club grade and interest rate deliberately excluded

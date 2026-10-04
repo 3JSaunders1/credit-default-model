@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml/badge.svg)](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml)
 
-An end-to-end probability of default (PD) model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: out-of-time validation, discrimination and calibration metrics, time-aware hyperparameter tuning, a Weight of Evidence scorecard, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
+An end-to-end credit risk model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: probability of default (PD) with out-of-time validation, discrimination and calibration metrics, an expected loss framework (PD × LGD × EAD) validated against realized losses, time-aware hyperparameter tuning, a Weight of Evidence scorecard, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
 
 ---
 
@@ -13,6 +13,7 @@ An end-to-end probability of default (PD) model built on Lending Club loan data,
 | **Out-of-time AUC (2015 vintage)** | 0.655 for logistic regression (Gini 0.31, KS 0.22); 0.660 for XGBoost (Gini 0.32, KS 0.23) |
 | **Risk separation** | Actual default rates rise from **4.3%** in the lowest-risk decile to **28.1%** in the highest, about **6.6x** |
 | **Logistic regression vs. XGBoost** | On identical training data, XGBoost adds a small edge (+0.005 AUC). Monotonic XGBoost keeps nearly all of it (0.659) with economically sensible constraints |
+| **Expected loss** | Predicted 2015 losses of $234.5M vs. $274.0M actual (−14%). Decomposition shows almost the entire shortfall came from PD; LGD (88.9%) and EAD (57.5%) held within about 1% of their assumptions |
 | **Hyperparameter tuning** | 21 configurations under time-aware cross-validation all scored within 0.003 AUC. An apparent tuning gain turned out to come entirely from training on more recent data |
 | **WoE scorecard** | A classic points-based scorecard nearly matches the benchmark logistic regression (AUC 0.651 vs. 0.655) using half the features, with every coefficient correctly signed |
 | **Calibration** | The base model **underpredicts** 2015 defaults: 13.2% predicted vs. 14.9% actual |
@@ -23,13 +24,13 @@ An end-to-end probability of default (PD) model built on Lending Club loan data,
 | **Macro features** | Cut the calibration gap roughly in half (14.1% vs. 14.9% actual), but national unemployment showed a counterintuitive, cycle-driven sign that should not be trusted in production |
 | **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income, DTI), with SHAP reason codes for individual loans |
 | **Scaling** | The data pipeline is also implemented in **PySpark**, reconciled against the DuckDB SQL version across 1,020,743 loans with **zero discrepancies** |
-| **Engineering** | 38 automated tests run on every push, shared preprocessing and model settings across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
+| **Engineering** | 42 automated tests run on every push, shared preprocessing and model settings across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
 
 ---
 
 ## 1. Purpose
 
-The goal is to predict the probability that a 36-month consumer loan is **charged off at any point over its term**, using only information available **at origination**, and to evaluate the model with the rigor expected in bank model risk management.
+The goal is to predict the probability that a 36-month consumer loan is **charged off at any point over its term**, using only information available **at origination**, to translate that into **expected losses**, and to evaluate both with the rigor expected in bank model risk management.
 
 The project emphasizes:
 
@@ -41,7 +42,7 @@ The project emphasizes:
 - **Questioning results**: testing whether an improvement is trustworthy, not just whether a metric went up.
 - **Reproducibility**: tests, pinned dependencies, and archived runs, so every result can be traced and rerun.
 
-This complements my [Macro-Driven Credit Risk Lab](https://github.com/3JSaunders1/macro-credit-risk-lab), which models how macroeconomic conditions drive credit risk. This project focuses on borrower-level default prediction.
+This complements my [Macro-Driven Credit Risk Lab](https://github.com/3JSaunders1/macro-credit-risk-lab), which models how macroeconomic conditions drive credit risk. This project focuses on borrower-level default prediction and loss estimation.
 
 ---
 
@@ -95,6 +96,7 @@ The jump in 2016–2017 is largely an artifact. The data ends in late 2018, so 3
 ```
 Kaggle API → DuckDB (SQL) → features → models → evaluation → recalibration → monitoring
            → PySpark      → parity check against DuckDB      → tuning, WoE scorecard
+           → loss outcomes (SQL) → expected loss (PD × LGD × EAD)
 FRED API   → DuckDB (SQL join) → macro comparison
                                  → explainability
 ```
@@ -112,6 +114,7 @@ FRED API   → DuckDB (SQL join) → macro comparison
 11. **Monitoring report** (`monitor.py`): feature-level PSI, score PSI, AUC, and calibration by issue quarter, with traffic-light thresholds.
 12. **WoE scorecard** (`woe.py`): Weight of Evidence binning, information value selection, a logistic regression on WoE values, and a points-based scorecard.
 13. **Hyperparameter tuning** (`tune.py`): random search for XGBoost and a regularization grid for logistic regression, under expanding-window time-aware cross-validation.
+14. **Expected loss** (`expected_loss.py`, `sql/03_loss_outcomes.sql`): LGD and EAD estimated from 2012–2014 charge-offs, combined with PD, and validated against realized 2015 losses.
 
 ### Features
 **Used (all known at origination):**
@@ -131,6 +134,7 @@ FRED API   → DuckDB (SQL join) → macro comparison
 - Preprocessing (scaling, encoding) is wrapped in a scikit-learn `Pipeline` / `ColumnTransformer`, so the same fitted transformations are applied consistently.
 - Hyperparameter tuning uses only folds within 2012–2014; the 2015 test set is evaluated once, after settings are chosen.
 - Recalibration uses only data that would be available at prediction time (the 2014 vintage), never the 2015 test outcomes.
+- **Loss outcomes** (principal repaid, recoveries, and collection fees) are read through a **separate SQL file** and used only to measure LGD and EAD, never as PD model features. LGD and EAD assumptions come from 2012–2014 charge-offs only.
 - Macro values use the **month before origination**, since monthly economic data is published with a lag.
 
 ### Models
@@ -196,6 +200,55 @@ All results are on the **2015 out-of-time test set** (283,026 loans).
 | Train (2012–2014) vs. test (2015) | **0.001** |
 
 A PSI below 0.10 is conventionally considered stable. At 0.001, the score distribution is essentially unchanged.
+
+### Expected loss (PD × LGD × EAD)
+The PD model was extended to dollar losses (`expected_loss.py`):
+
+- **EAD (exposure at default):** the share of the original loan amount still owed at charge-off.
+- **LGD (loss given default):** the share of that exposure never recovered, after net recoveries (recoveries minus collection fees).
+- **Expected loss** for each loan = PD × LGD × (loan amount × EAD ratio).
+
+LGD and the EAD ratio were estimated as averages over **40,596 charged-off loans from 2012–2014**, then applied to the 2015 portfolio, so no 2015 information enters the estimates.
+
+**Portfolio results (2015: 283,026 loans, $3.62 billion originated):**
+
+| Estimate | Expected loss | Loss rate | vs. actual |
+|---|---|---|---|
+| Base PD | $234.5M | 6.47% | −14.4% |
+| Recalibrated PD | $238.6M | 6.58% | −12.9% |
+| **Actual realized loss** | **$274.0M** | **7.56%** | — |
+
+**Which component drove the shortfall:**
+
+| Component | Assumed (2012–2014) | Actual (2015) | Actual ÷ assumed |
+|---|---|---|---|
+| PD (default rate) | 13.2% | 14.9% | **1.127** |
+| LGD | 88.9% | 89.2% | 1.004 |
+| EAD ratio | 57.5% | 58.3% | 1.013 |
+
+**Expected vs. actual loss rate by PD decile (share of originated amount):**
+
+| Decile | Expected | Actual |
+|---|---|---|
+| 1 (lowest risk) | 2.12% | 2.13% |
+| 2 | 3.48% | 3.75% |
+| 3 | 4.37% | 4.86% |
+| 4 | 5.13% | 5.70% |
+| 5 | 5.88% | 6.99% |
+| 6 | 6.67% | 7.82% |
+| 7 | 7.56% | 9.27% |
+| 8 | 8.62% | 10.25% |
+| 9 | 10.12% | 12.34% |
+| 10 (highest risk) | 13.46% | 15.86% |
+
+![Expected vs. actual loss by decile](reports/figures/expected_loss_deciles.png)
+
+**Interpretation:**
+- **Severity estimates are realistic and stable.** LGD of 88.9% is typical for unsecured consumer loans with no collateral, and an EAD ratio of 57.5% means defaulting borrowers had repaid about 42% of principal on average before charge-off.
+- **Expected losses fell short by about 14%** ($39.5 million on a $3.62 billion portfolio). Recalibration narrowed this only slightly, to about 13%.
+- **Almost the entire shortfall came from PD.** Actual defaults ran 12.7% above prediction, while LGD and EAD held within about 1% of their assumptions; together, 1.127 × 1.004 × 1.013 ≈ 1.14 reproduces the 14% gap. **Severity held steady; default frequency drifted**, the concept drift finding measured in dollars.
+- **Ranking holds in dollar terms**, with loss rates rising from 2.1% to 15.9% across deciles. The safest decile is predicted almost exactly, while riskier deciles are underpredicted by roughly 15–20%.
+- **For reserving, this points to a targeted response.** A CECL-style reserve built on this model would have been about $40 million short. Because LGD and EAD were accurate, a qualitative adjustment or overlay should focus on **default frequency**, particularly in higher-risk segments.
 
 ### Hyperparameter tuning
 Settings were tuned with **expanding-window, time-aware cross-validation** (`tune.py`), so every fold trains on earlier loans and validates on later ones:
@@ -279,7 +332,7 @@ The evaluation produces two results that look contradictory at first:
 1. The **population did not change**. The score PSI is 0.001, so 2015 borrowers look almost identical to 2012–2014 borrowers on the features the model uses.
 2. **Outcomes did change**. The default rate rose from 13.2% to 14.9%, and the model underpredicted risk across the board.
 
-Together, these point to **concept drift**: the *relationship* between borrower characteristics and default shifted, rather than the *mix* of borrowers. Borrowers with the same profile were simply more likely to default in the 2015 vintage, plausibly reflecting vintage-level effects such as underwriting changes, competitive conditions in the lending market, or the credit cycle. The macro analysis in Section 7 supports the credit-cycle explanation.
+Together, these point to **concept drift**: the *relationship* between borrower characteristics and default shifted, rather than the *mix* of borrowers. Borrowers with the same profile were simply more likely to default in the 2015 vintage, plausibly reflecting vintage-level effects such as underwriting changes, competitive conditions in the lending market, or the credit cycle. The macro analysis in Section 7 supports the credit-cycle explanation, and the expected loss decomposition in Section 4 shows the drift was in **default frequency**, not loss severity.
 
 **Why this matters for model monitoring:** a monitoring program that relied only on PSI or other input-stability checks would have reported the model as stable. The deterioration is only visible through **calibration and performance monitoring** against realized outcomes. Effective credit model monitoring needs both:
 
@@ -468,16 +521,17 @@ A parity check (`compare_engines.py`) reconciles the two engines year by year:
 The two pipelines produce identical results, so the modeling steps can run on either engine. Spark runs locally here (`local[*]`), but the same code scales to a cluster for larger datasets.
 
 ### Automated tests
-**38 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
+**42 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
 
 | Test file | What it checks |
 |---|---|
-| `test_leakage.py` | No post-origination fields in features or SQL, Lending Club model outputs excluded, target not used as a feature, and a strict time split with no overlap |
+| `test_leakage.py` | No post-origination fields in features or the feature SQL, Lending Club model outputs excluded, target not used as a feature, and a strict time split with no overlap |
 | `test_metrics.py` | PSI is zero for identical distributions, flags large shifts, and is never negative; KS and AUC/Gini behave correctly; calibration tables account for every loan |
 | `test_recalibration.py` | The intercept shift hits its target, preserves ranking, does nothing when already calibrated, and keeps PDs between 0 and 1; the recalibration holdout is fully separate from the fit period |
 | `test_monitor.py` | Categorical PSI is zero for identical mixes and flags large shifts; binary and text features use category shares rather than decile bins; traffic-light thresholds match the model card |
 | `test_woe.py` | Safer bins get positive WoE, IV is high for predictive features and near zero for unrelated ones, unseen categories get neutral WoE, out-of-range values are binned, and the score scale is exact (600 points at 50:1 odds, +20 points per doubling) |
 | `test_tuning.py` | Every cross-validation fold trains only on loans issued before its validation period, and sampled hyperparameters stay within range |
+| `test_expected_loss.py` | Full recovery means zero LGD and no recovery means full LGD; loans with no exposure are dropped; LGD and EAD ratios stay between 0 and 1; expected loss equals PD × LGD × EAD |
 | `test_features.py` | Employment length parsing, missing indicators, safe handling of zero income, and no modification of input data |
 | `test_spark_pipeline.py` | The Spark pipeline keeps only completed 36-month loans, sets the default flag correctly, and parses issue dates |
 | `test_preprocessing.py` | Every script uses the same preprocessing definition, so encoder settings can't drift between model comparisons |
@@ -502,7 +556,7 @@ This makes every result traceable to the exact code and settings that produced i
 ### Other practices
 - **Shared preprocessing and settings:** a single definition of the preprocessing, benchmark logistic model, and XGBoost settings (`make_preprocessor`, `make_logit`, and `XGB_PARAMS` in `train.py`), reused by every script, so comparisons stay consistent.
 - **Pinned dependencies** in `requirements.txt` for exact reproducibility.
-- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make monitor`, `make woe`, `make tune`, `make spark`, and so on).
+- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make monitor`, `make woe`, `make el`, `make tune`, `make spark`, and so on).
 - **A model card** (`docs/model_card.md`) summarizing intended use, performance, limitations, and a monitoring plan with review triggers.
 - **Credentials kept out of the code**: the Kaggle token lives in `~/.kaggle/`, and the FRED key in an untracked `.env` file.
 
@@ -511,12 +565,14 @@ This makes every result traceable to the exact code and settings that produced i
 ## 10. Limitations
 
 - **Modest discrimination.** An AUC of 0.655–0.660 reflects an independent model using application data only. Lending Club's grade and interest rate, which were deliberately excluded, carry substantial predictive information. Macro features and hyperparameter tuning did not improve ranking, and the WoE analysis shows that only FICO reaches medium predictive strength on its own.
-- **Residual miscalibration.** The base model underpredicts 2015 defaults by about 1.7 percentage points. Recalibration, under both the original and strict designs, reduced this only to about 1.5 points, and the macro-enhanced model still underpredicts by about 0.8 points.
+- **Residual miscalibration.** The base model underpredicts 2015 defaults by about 1.7 percentage points, and expected losses by about 14%. Recalibration, under both the original and strict designs, reduced the PD gap only to about 1.5 points, and the macro-enhanced model still underpredicts by about 0.8 points.
+- **Simple LGD and EAD assumptions.** LGD and the EAD ratio are portfolio-wide averages rather than segment-level or loan-level models, and expected loss is not discounted or timed over the life of the loan, as a full CECL estimate would be.
+- **Recoveries may be incomplete.** The data ends in late 2018, so recoveries on loans charged off shortly before then may still have been in progress, which could overstate realized LGD for later charge-offs.
 - **Untrustworthy national macro relationship.** National unemployment's coefficient reflects a single phase of the credit cycle, estimated from roughly 36 monthly observations, and has a counterintuitive sign that would mislead the model in a downturn.
 - **WoE bins are not forced to be monotonic.** Bins come from quantiles rather than an optimized monotonic binning, so WoE may not rise or fall smoothly across every feature's bins.
 - **One out-of-time year.** Monitoring covers four out-of-time quarters, all from 2015. Performance across later vintages and different economic conditions has not been assessed.
 - **In-sample early warning.** The rising calibration gap in late 2014 appears in quarters that were part of the training data, so it illustrates what monitoring would show rather than a true out-of-sample early warning.
-- **Lifetime target, not a 12-month PD.** The model predicts default over the 36-month term, which differs from the 12-month PDs common in some regulatory and accounting contexts. It is closer in spirit to a lifetime loss view, but it is not a full CECL model.
+- **Lifetime target, not a 12-month PD.** The model predicts default over the 36-month term, which differs from the 12-month PDs common in some regulatory and accounting contexts.
 - **Approved loans only.** The data includes only loans Lending Club approved, so the model has not seen rejected applicants. Using it for underwriting decisions would require addressing this selection bias (reject inference).
 - **Compact feature set.** Features are a compact set of origination variables; richer data, such as tradeline-level bureau history, would likely matter more than further model tuning.
 - **Platform-specific data.** Lending Club's borrower base, underwriting, and history may not generalize to other lenders or loan products.
@@ -528,16 +584,16 @@ This makes every result traceable to the exact code and settings that produced i
 **Credit cycle and macro modeling**
 - Model the credit cycle explicitly, for example with **vintage effects** or underwriting-cycle indicators, rather than relying on national unemployment as a proxy.
 - Train on data that spans a **full credit cycle**, such as the Freddie Mac Single-Family Loan-Level Dataset covering 2008 and 2020, so macro relationships are estimated across both downturns and recoveries.
-- Test macro conditions **over the life of the loan** in a stress-testing or scenario framework, rather than at origination only.
+- Link to the **Macro-Driven Credit Risk Lab** so macroeconomic stress scenarios flow through PD to stressed expected losses.
 
 **Modeling**
+- **Segment-level LGD and EAD models**, for example by loan purpose, FICO band, or loan size, and **lifetime loss timing and discounting** for a fuller CECL-style estimate.
 - **Monotonic, optimized binning** for the WoE scorecard, so each feature's risk rises or falls smoothly across bins.
 - A **survival or discrete-time hazard model**, which handles loans that have not yet matured directly, rather than excluding later vintages.
-- A **full expected loss** estimate (PD × LGD × EAD) using recovery data, as a step toward a CECL-style framework.
 
 **Engineering**
 - Extend the PySpark implementation to feature engineering and model scoring.
-- A **Streamlit dashboard** for exploring predictions, calibration, and monitoring results.
+- A **Streamlit dashboard** for exploring predictions, calibration, monitoring, and expected losses.
 
 ---
 
@@ -558,7 +614,8 @@ credit_default_model_project/
 │   └── runs/                  # timestamped archives of each full run
 ├── sql/
 │   ├── 01_build_loan_table.sql
-│   └── 02_add_macro.sql       # joins FRED macro data to loans (CTE + window function)
+│   ├── 02_add_macro.sql       # joins FRED macro data to loans (CTE + window function)
+│   └── 03_loss_outcomes.sql   # EAD and recoveries for charged-off loans (outcomes only)
 ├── src/credit_default/
 │   ├── config.py              # paths, target definition, split dates, seed
 │   ├── download.py            # Kaggle API download
@@ -573,9 +630,11 @@ credit_default_model_project/
 │   ├── monitor.py             # quarterly monitoring: feature PSI, score PSI, AUC, calibration
 │   ├── woe.py                 # Weight of Evidence binning, IV, and points-based scorecard
 │   ├── tune.py                # time-aware hyperparameter tuning
+│   ├── expected_loss.py       # PD x LGD x EAD, validated against realized losses
 │   ├── spark_pipeline.py      # PySpark version of the loan-table pipeline
 │   └── compare_engines.py     # DuckDB vs. Spark parity check
 ├── tests/
+│   ├── test_expected_loss.py
 │   ├── test_features.py
 │   ├── test_leakage.py
 │   ├── test_metrics.py
@@ -619,7 +678,7 @@ make download
 ```bash
 make all
 ```
-This builds the data, trains and evaluates the models, recalibrates, adds macro features, runs explainability, the monitoring report, and the WoE scorecard, and archives everything to `reports/runs/<timestamp>/`.
+This builds the data, trains and evaluates the models, recalibrates, adds macro features, runs explainability, the monitoring report, the WoE scorecard, and the expected loss analysis, and archives everything to `reports/runs/<timestamp>/`.
 
 **5. Run hyperparameter tuning (optional, about 20–30 minutes)**
 ```bash
@@ -636,7 +695,7 @@ make spark
 make test
 ```
 
-Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, `make monitor`, `make woe`, `make tune`, and `make spark`.
+Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, `make monitor`, `make woe`, `make el`, `make tune`, and `make spark`.
 
 ---
 
