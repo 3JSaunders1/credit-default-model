@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml/badge.svg)](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml)
 
-An end-to-end probability of default (PD) model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: out-of-time validation, discrimination and calibration metrics, population stability monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
+An end-to-end probability of default (PD) model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: out-of-time validation, discrimination and calibration metrics, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
 
 ---
 
@@ -16,11 +16,12 @@ An end-to-end probability of default (PD) model built on Lending Club loan data,
 | **Calibration** | The base model **underpredicts** 2015 defaults: 13.2% predicted vs. 14.9% actual |
 | **Population stability** | Score PSI of **0.001**: no meaningful shift in the borrower population |
 | **Main insight** | The 2015 miss is **concept drift, not data drift**. Borrowers looked the same, but defaulted more. PSI alone would not have caught it. |
+| **Monitoring** | Quarterly monitoring shows every input stable (all feature PSIs green) and AUC steady, but calibration flagged in every 2015 quarter, with the gap already rising in late 2014 |
 | **Recalibration** | Two designs tested, including a strict 2014 holdout. Both moved the 2015 mean PD to only about 13.4% (vs. 14.9% actual), confirming the remaining gap is genuine concept drift |
 | **Macro features** | Cut the calibration gap roughly in half (14.1% vs. 14.9% actual), but national unemployment showed a counterintuitive, cycle-driven sign that should not be trusted in production |
 | **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income). Monotonic constraints cost essentially **no** AUC (0.654 vs. 0.655). |
 | **Scaling** | The data pipeline is also implemented in **PySpark**, reconciled against the DuckDB SQL version across 1,020,743 loans with **zero discrepancies** |
-| **Engineering** | 26 automated tests run on every push, shared preprocessing across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
+| **Engineering** | 31 automated tests run on every push, shared preprocessing across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
 
 ---
 
@@ -33,7 +34,7 @@ The project emphasizes:
 - **Avoiding leakage**: only features known when the loan was issued.
 - **Out-of-time validation**: training on earlier vintages and testing on a later one, which mirrors how a credit model is actually used.
 - **Calibration, not just ranking**: PDs feed expected loss (PD × LGD × EAD), reserves, pricing, and capital, so the probability levels need to be right, not just the ordering.
-- **Monitoring**: checking population stability to understand whether performance changes come from data drift or concept drift.
+- **Monitoring**: tracking inputs, ranking, and calibration over time to understand whether performance changes come from data drift or concept drift.
 - **Explainability**: making model behavior transparent and defensible, as lenders must be able to explain credit decisions.
 - **Questioning results**: testing whether an improvement is trustworthy, not just whether a metric went up.
 - **Reproducibility**: tests, pinned dependencies, and archived runs, so every result can be traced and rerun.
@@ -90,7 +91,7 @@ The jump in 2016–2017 is largely an artifact. The data ends in late 2018, so 3
 
 ### Pipeline
 ```
-Kaggle API → DuckDB (SQL) → features → models → evaluation → recalibration
+Kaggle API → DuckDB (SQL) → features → models → evaluation → recalibration → monitoring
            → PySpark      → parity check against DuckDB
 FRED API   → DuckDB (SQL join) → macro comparison
                                  → explainability
@@ -99,13 +100,14 @@ FRED API   → DuckDB (SQL join) → macro comparison
 1. **Download** (`download.py`): pulls only the accepted-loans file through the Kaggle API.
 2. **Load and filter with SQL** (`sql/01_build_loan_table.sql`, `data.py`): DuckDB reads the compressed CSV, builds the target, applies the sample filters, and selects origination-time features.
 3. **Feature engineering** (`features.py`): cleaning, engineered features, imputation, and the out-of-time split.
-4. **Training** (`train.py`): logistic regression benchmark and XGBoost challenger.
+4. **Training** (`train.py`): shared preprocessing, a logistic regression benchmark, and an XGBoost challenger.
 5. **Evaluation** (`evaluate.py`): AUC, Gini, KS, calibration, ROC, and PSI.
 6. **Recalibration** (`recalibrate.py`): intercept adjustment, comparing the original design with a strict design that holds out the 2014 vintage.
 7. **Macro data** (`fred.py`, `sql/02_add_macro.sql`): pulls FRED series and joins them to loans in SQL.
 8. **Macro comparison** (`compare_macro.py`): base vs. macro-enhanced logistic regression.
 9. **Explainability** (`explain.py`): odds ratios, SHAP values, partial dependence, and monotonic constraints.
 10. **Spark pipeline and parity check** (`spark_pipeline.py`, `compare_engines.py`): rebuilds the loan table in PySpark and reconciles it against the DuckDB version.
+11. **Monitoring report** (`monitor.py`): feature-level PSI, score PSI, AUC, and calibration by issue quarter, with traffic-light thresholds.
 
 ### Features
 **Used (all known at origination):**
@@ -201,6 +203,35 @@ Together, these point to **concept drift**: the *relationship* between borrower 
 |---|---|---|
 | Population stability (PSI) | Data drift: changes in inputs | Nothing (PSI = 0.001) |
 | Calibration and performance | Concept drift: changes in relationships | Systematic underprediction |
+
+### Quarterly monitoring report
+
+A monitoring report (`monitor.py`) applies the review triggers from the model card to every issue quarter from 2012 to 2015: feature-level PSI for every input, score PSI, AUC, and calibration. Thresholds: PSI above 0.10 is a watch and above 0.25 requires action; an AUC drop of more than 0.03 or a calibration gap above 1 percentage point triggers review. Continuous features use decile-binned PSI; categorical and low-cardinality features use category shares, since binary indicators cannot be split into deciles.
+
+| Quarter | Loans | Actual | Predicted | Gap (pp) | AUC | Score PSI | Flags |
+|---|---|---|---|---|---|---|---|
+| 2014 Q1 (in-sample) | 34,074 | 12.87% | 13.39% | −0.53 | 0.644 | 0.001 | none |
+| 2014 Q2 (in-sample) | 37,881 | 13.55% | 13.38% | +0.16 | 0.653 | 0.001 | none |
+| 2014 Q3 (in-sample) | 40,595 | 13.63% | 13.43% | +0.20 | 0.660 | 0.002 | none |
+| 2014 Q4 (in-sample) | 50,020 | 14.53% | 13.70% | +0.82 | 0.652 | 0.005 | none |
+| **2015 Q1** | 56,568 | 14.83% | 13.64% | **+1.20** | 0.650 | 0.004 | calibration |
+| **2015 Q2** | 64,222 | 15.38% | 13.39% | **+1.99** | 0.652 | 0.001 | calibration |
+| **2015 Q3** | 73,567 | 14.58% | 13.04% | **+1.54** | 0.660 | 0.003 | calibration |
+| **2015 Q4** | 88,669 | 14.82% | 12.94% | **+1.87** | 0.657 | 0.004 | calibration |
+
+The full table, covering every quarter from 2012, is saved as `reports/figures/monitoring_by_quarter.csv`.
+
+![Monitoring dashboard](reports/figures/monitoring_dashboard.png)
+
+**Feature stability:** every input is green. The largest quarterly feature PSI is 0.061, for inquiries in the past six months, and most are below 0.02 (full table: `reports/figures/feature_psi.csv`).
+
+**What the report shows:**
+- **Inputs and ranking were stable.** Every feature PSI and every score PSI stayed well below the watch threshold, and AUC held between 0.650 and 0.660 in every 2015 quarter, in line with the training baseline of 0.653.
+- **Calibration failed in every 2015 quarter,** with underprediction of 1.2 to 2.0 percentage points. This is a persistent level shift, not a one-quarter anomaly.
+- **The drift was visible early.** The calibration gap rose through 2014, from −0.5 points in Q1 to +0.8 points in Q4, so quarterly calibration monitoring would have signaled the shift before the out-of-time period began.
+- **The pattern points to a specific remedy.** With inputs and ranking intact, the appropriate response is recalibration or a management overlay, not a model rebuild.
+
+The earliest quarters, 2012 Q1 and Q2, also show calibration flags and a somewhat higher score PSI (0.071 in 2012 Q1), reflecting Lending Club's still-evolving borrower base in its early years and smaller loan volumes.
 
 ---
 
@@ -353,13 +384,14 @@ A parity check (`compare_engines.py`) reconciles the two engines year by year:
 The two pipelines produce identical results, so the modeling steps can run on either engine. Spark runs locally here (`local[*]`), but the same code scales to a cluster for larger datasets.
 
 ### Automated tests
-**26 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
+**31 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
 
 | Test file | What it checks |
 |---|---|
 | `test_leakage.py` | No post-origination fields in features or SQL, Lending Club model outputs excluded, target not used as a feature, and a strict time split with no overlap |
 | `test_metrics.py` | PSI is zero for identical distributions, flags large shifts, and is never negative; KS and AUC/Gini behave correctly; calibration tables account for every loan |
 | `test_recalibration.py` | The intercept shift hits its target, preserves ranking, does nothing when already calibrated, and keeps PDs between 0 and 1; the recalibration holdout is fully separate from the fit period |
+| `test_monitor.py` | Categorical PSI is zero for identical mixes and flags large shifts; binary and text features use category shares rather than decile bins; traffic-light thresholds match the model card |
 | `test_features.py` | Employment length parsing, missing indicators, safe handling of zero income, and no modification of input data |
 | `test_spark_pipeline.py` | The Spark pipeline keeps only completed 36-month loans, sets the default flag correctly, and parses issue dates |
 | `test_preprocessing.py` | Every script uses the same preprocessing definition, so encoder settings can't drift between model comparisons |
@@ -384,7 +416,7 @@ This makes every result traceable to the exact code and settings that produced i
 ### Other practices
 - **Shared preprocessing:** a single definition of the preprocessing and benchmark logistic model (`make_preprocessor` and `make_logit` in `train.py`), reused by every script, so comparisons such as base vs. macro-enhanced stay consistent.
 - **Pinned dependencies** in `requirements.txt` for exact reproducibility.
-- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make explain`, `make spark`, and so on).
+- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make monitor`, `make spark`, and so on).
 - **A model card** (`docs/model_card.md`) summarizing intended use, performance, limitations, and a monitoring plan with review triggers.
 - **Credentials kept out of the code**: the Kaggle token lives in `~/.kaggle/`, and the FRED key in an untracked `.env` file.
 
@@ -395,7 +427,8 @@ This makes every result traceable to the exact code and settings that produced i
 - **Modest discrimination.** An AUC of 0.655 reflects an independent model using application data only. Lending Club's grade and interest rate, which were deliberately excluded, carry substantial predictive information. Macro features did not improve ranking.
 - **Residual miscalibration.** The base model underpredicts 2015 defaults by about 1.7 percentage points. Recalibration, under both the original and strict designs, reduced this only to about 1.5 points, and the macro-enhanced model still underpredicts by about 0.8 points.
 - **Untrustworthy national macro relationship.** National unemployment's coefficient reflects a single phase of the credit cycle, estimated from roughly 36 monthly observations, and has a counterintuitive sign that would mislead the model in a downturn.
-- **Single out-of-time vintage.** Results are based on one test year. Performance across multiple future vintages and economic conditions has not been assessed.
+- **One out-of-time year.** Monitoring covers four out-of-time quarters, all from 2015. Performance across later vintages and different economic conditions has not been assessed.
+- **In-sample early warning.** The rising calibration gap in late 2014 appears in quarters that were part of the training data, so it illustrates what monitoring would show rather than a true out-of-sample early warning.
 - **Lifetime target, not a 12-month PD.** The model predicts default over the 36-month term, which differs from the 12-month PDs common in some regulatory and accounting contexts. It is closer in spirit to a lifetime loss view, but it is not a full CECL model.
 - **Approved loans only.** The data includes only loans Lending Club approved, so the model has not seen rejected applicants. Using it for underwriting decisions would require addressing this selection bias (reject inference).
 - **Limited feature set and tuning.** Features are a compact set of origination variables, and XGBoost hyperparameters were set sensibly rather than tuned through a full search.
@@ -409,10 +442,6 @@ This makes every result traceable to the exact code and settings that produced i
 - Model the credit cycle explicitly, for example with **vintage effects** or underwriting-cycle indicators, rather than relying on national unemployment as a proxy.
 - Train on data that spans a **full credit cycle**, such as the Freddie Mac Single-Family Loan-Level Dataset covering 2008 and 2020, so macro relationships are estimated across both downturns and recoveries.
 - Test macro conditions **over the life of the loan** in a stress-testing or scenario framework, rather than at origination only.
-
-**Calibration and monitoring**
-- **Feature-level PSI** to monitor each input, not just the overall score.
-- **Rolling out-of-time evaluation** across multiple vintages to track performance stability over time.
 
 **Modeling**
 - A **Weight of Evidence (WoE) scorecard** version of the logistic regression, the classic approach in retail credit.
@@ -455,17 +484,20 @@ credit_default_model_project/
 │   ├── fred.py                # FRED API pull and SQL macro join
 │   ├── compare_macro.py       # base vs. macro-enhanced model comparison
 │   ├── explain.py             # odds ratios, SHAP, partial dependence, monotonic constraints
+│   ├── monitor.py             # quarterly monitoring: feature PSI, score PSI, AUC, calibration
 │   ├── spark_pipeline.py      # PySpark version of the loan-table pipeline
 │   └── compare_engines.py     # DuckDB vs. Spark parity check
 ├── tests/
 │   ├── test_features.py
 │   ├── test_leakage.py
 │   ├── test_metrics.py
+│   ├── test_monitor.py
 │   ├── test_preprocessing.py
 │   ├── test_recalibration.py
 │   └── test_spark_pipeline.py
 ├── tools/
 │   └── export_codebase.py     # prints the project tree and saves code snapshots
+├── LICENSE
 ├── Makefile                   # one-command pipeline and run archiving
 ├── pytest.ini
 ├── requirements.txt           # pinned dependencies
@@ -497,7 +529,7 @@ make download
 ```bash
 make all
 ```
-This builds the data, trains and evaluates the models, recalibrates, adds macro features, runs explainability, and archives everything to `reports/runs/<timestamp>/`.
+This builds the data, trains and evaluates the models, recalibrates, adds macro features, runs explainability and the monitoring report, and archives everything to `reports/runs/<timestamp>/`.
 
 **5. Run the Spark pipeline and parity check**
 ```bash
@@ -509,7 +541,7 @@ make spark
 make test
 ```
 
-Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, and `make spark`.
+Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, `make monitor`, and `make spark`.
 
 ---
 
