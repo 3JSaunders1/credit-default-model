@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml/badge.svg)](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml)
 
-An end-to-end probability of default (PD) model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: out-of-time validation, discrimination and calibration metrics, a Weight of Evidence scorecard, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
+An end-to-end probability of default (PD) model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: out-of-time validation, discrimination and calibration metrics, time-aware hyperparameter tuning, a Weight of Evidence scorecard, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
 
 ---
 
@@ -10,19 +10,20 @@ An end-to-end probability of default (PD) model built on Lending Club loan data,
 
 | | Result |
 |---|---|
-| **Out-of-time AUC (2015 vintage)** | 0.655 (Gini 0.31, KS 0.22) |
+| **Out-of-time AUC (2015 vintage)** | 0.655 for logistic regression (Gini 0.31, KS 0.22); 0.660 for XGBoost (Gini 0.32, KS 0.23) |
 | **Risk separation** | Actual default rates rise from **4.3%** in the lowest-risk decile to **28.1%** in the highest, about **6.6x** |
-| **Logistic regression vs. XGBoost** | Virtually identical performance, so the interpretable model is preferred |
-| **WoE scorecard** | A classic points-based scorecard nearly matches the benchmark (AUC 0.651 vs. 0.655) using half the features, with every coefficient correctly signed |
+| **Logistic regression vs. XGBoost** | On identical training data, XGBoost adds a small edge (+0.005 AUC). Monotonic XGBoost keeps nearly all of it (0.659) with economically sensible constraints |
+| **Hyperparameter tuning** | 21 configurations under time-aware cross-validation all scored within 0.003 AUC. An apparent tuning gain turned out to come entirely from training on more recent data |
+| **WoE scorecard** | A classic points-based scorecard nearly matches the benchmark logistic regression (AUC 0.651 vs. 0.655) using half the features, with every coefficient correctly signed |
 | **Calibration** | The base model **underpredicts** 2015 defaults: 13.2% predicted vs. 14.9% actual |
 | **Population stability** | Score PSI of **0.001**: no meaningful shift in the borrower population |
 | **Main insight** | The 2015 miss is **concept drift, not data drift**. Borrowers looked the same, but defaulted more. PSI alone would not have caught it. |
 | **Monitoring** | Quarterly monitoring shows every input stable (all feature PSIs green) and AUC steady, but calibration flagged in every 2015 quarter, with the gap already rising in late 2014 |
 | **Recalibration** | Two designs tested, including a strict 2014 holdout. Both moved the 2015 mean PD to only about 13.4% (vs. 14.9% actual), confirming the remaining gap is genuine concept drift |
 | **Macro features** | Cut the calibration gap roughly in half (14.1% vs. 14.9% actual), but national unemployment showed a counterintuitive, cycle-driven sign that should not be trusted in production |
-| **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income). Monotonic constraints cost essentially **no** AUC (0.654 vs. 0.655). |
+| **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income, DTI), with SHAP reason codes for individual loans |
 | **Scaling** | The data pipeline is also implemented in **PySpark**, reconciled against the DuckDB SQL version across 1,020,743 loans with **zero discrepancies** |
-| **Engineering** | 36 automated tests run on every push, shared preprocessing across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
+| **Engineering** | 38 automated tests run on every push, shared preprocessing and model settings across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
 
 ---
 
@@ -93,7 +94,7 @@ The jump in 2016–2017 is largely an artifact. The data ends in late 2018, so 3
 ### Pipeline
 ```
 Kaggle API → DuckDB (SQL) → features → models → evaluation → recalibration → monitoring
-           → PySpark      → parity check against DuckDB          → WoE scorecard
+           → PySpark      → parity check against DuckDB      → tuning, WoE scorecard
 FRED API   → DuckDB (SQL join) → macro comparison
                                  → explainability
 ```
@@ -101,7 +102,7 @@ FRED API   → DuckDB (SQL join) → macro comparison
 1. **Download** (`download.py`): pulls only the accepted-loans file through the Kaggle API.
 2. **Load and filter with SQL** (`sql/01_build_loan_table.sql`, `data.py`): DuckDB reads the compressed CSV, builds the target, applies the sample filters, and selects origination-time features.
 3. **Feature engineering** (`features.py`): cleaning, engineered features, imputation, and the out-of-time split.
-4. **Training** (`train.py`): shared preprocessing, a logistic regression benchmark, and an XGBoost challenger.
+4. **Training** (`train.py`): shared preprocessing and model settings, a logistic regression benchmark, and an XGBoost challenger.
 5. **Evaluation** (`evaluate.py`): AUC, Gini, KS, calibration, ROC, and PSI.
 6. **Recalibration** (`recalibrate.py`): intercept adjustment, comparing the original design with a strict design that holds out the 2014 vintage.
 7. **Macro data** (`fred.py`, `sql/02_add_macro.sql`): pulls FRED series and joins them to loans in SQL.
@@ -110,6 +111,7 @@ FRED API   → DuckDB (SQL join) → macro comparison
 10. **Spark pipeline and parity check** (`spark_pipeline.py`, `compare_engines.py`): rebuilds the loan table in PySpark and reconciles it against the DuckDB version.
 11. **Monitoring report** (`monitor.py`): feature-level PSI, score PSI, AUC, and calibration by issue quarter, with traffic-light thresholds.
 12. **WoE scorecard** (`woe.py`): Weight of Evidence binning, information value selection, a logistic regression on WoE values, and a points-based scorecard.
+13. **Hyperparameter tuning** (`tune.py`): random search for XGBoost and a regularization grid for logistic regression, under expanding-window time-aware cross-validation.
 
 ### Features
 **Used (all known at origination):**
@@ -127,20 +129,21 @@ FRED API   → DuckDB (SQL join) → macro comparison
 - Only origination-time features, enforced by automated tests.
 - Imputation medians, WoE bins, and WoE values are computed on the **training data only** and then applied to the test set.
 - Preprocessing (scaling, encoding) is wrapped in a scikit-learn `Pipeline` / `ColumnTransformer`, so the same fitted transformations are applied consistently.
+- Hyperparameter tuning uses only folds within 2012–2014; the 2015 test set is evaluated once, after settings are chosen.
 - Recalibration uses only data that would be available at prediction time (the 2014 vintage), never the 2015 test outcomes.
 - Macro values use the **month before origination**, since monthly economic data is published with a lag.
 
 ### Models
 **Logistic regression (benchmark)**
-- Standardized numeric features and one-hot encoded categories.
+- Standardized numeric features and one-hot encoded categories, trained on all of 2012–2014.
 - **No class weights.** With a 13% default rate, the imbalance is moderate, and class weighting would distort the predicted probabilities. Because this is a PD model, calibrated probabilities take priority.
 
 **XGBoost (challenger)**
 - Shallow trees (`max_depth=4`), learning rate 0.05, row and column subsampling of 0.8.
-- **Time-aware early stopping**: trained on 2012–2013 and validated on 2014, stopping after 50 rounds without AUC improvement. Training stopped at **207 trees**.
+- **Two-step, time-aware training**: early stopping (trained on 2012–2013, validated on 2014) chooses the number of trees (**208**); the model is then **refit on all of 2012–2014** with that tree count, so it trains on exactly the same data as the logistic regression.
 
 **Monotonic XGBoost (constrained challenger)**
-- The same configuration, with monotonic constraints so key risk drivers can only move predicted risk in the economically sensible direction.
+- The same settings and two-step training, with monotonic constraints so key risk drivers can only move predicted risk in the economically sensible direction.
 
 **WoE scorecard (traditional challenger)**
 - Features binned into up to ten quantile bins (or categories), converted to Weight of Evidence, filtered by information value, and fit with logistic regression, then scaled to points.
@@ -155,15 +158,17 @@ All results are on the **2015 out-of-time test set** (283,026 loans).
 | Model | AUC | Gini | KS | Mean predicted PD | Actual default rate |
 |---|---|---|---|---|---|
 | Logistic regression | 0.655 | 0.310 | 0.223 | 13.2% | 14.9% |
-| XGBoost | 0.655 | 0.309 | 0.224 | 12.7% | 14.9% |
-| Monotonic XGBoost | 0.654 | — | — | — | 14.9% |
+| XGBoost | 0.660 | 0.320 | 0.232 | 13.3% | 14.9% |
+| Monotonic XGBoost | 0.659 | — | — | — | 14.9% |
 | WoE scorecard | 0.651 | 0.302 | 0.218 | 13.1% | 14.9% |
 
 ![ROC curve](reports/figures/roc.png)
 
 **Interpretation:**
 - All models separate risk meaningfully, though modestly, which is expected for a model built only on application data without Lending Club's grade.
-- **XGBoost adds essentially nothing over logistic regression.** The relationships in these features appear largely monotonic and close to linear in log-odds, so the added complexity of boosting does not pay off. Given equal performance, the **logistic regression is preferred** for its interpretability, stability, and ease of validation, which are the qualities banks and regulators value in PD models.
+- **On identical training data, XGBoost adds a small edge** of about 0.005 AUC over logistic regression, suggesting limited nonlinear structure in these features.
+- **Monotonic XGBoost keeps nearly all of that gain** (0.659), while guaranteeing that risk moves in economically sensible directions. That makes it the strongest defensible challenger.
+- **The choice is a classic tradeoff.** For a regulated PD model, the logistic regression's transparency and ease of validation may outweigh a 0.005 AUC gain; where a small accuracy improvement matters, the monotonic XGBoost offers a defensible alternative.
 
 ### Calibration (logistic regression, by risk decile)
 | Decile | Loans | Predicted | Actual |
@@ -191,6 +196,35 @@ All results are on the **2015 out-of-time test set** (283,026 loans).
 | Train (2012–2014) vs. test (2015) | **0.001** |
 
 A PSI below 0.10 is conventionally considered stable. At 0.001, the score distribution is essentially unchanged.
+
+### Hyperparameter tuning
+Settings were tuned with **expanding-window, time-aware cross-validation** (`tune.py`), so every fold trains on earlier loans and validates on later ones:
+
+| Fold | Train on | Validate on |
+|---|---|---|
+| 1 | 2012 – mid-2013 | 2013 H2 |
+| 2 | 2012 – 2013 | 2014 H1 |
+| 3 | 2012 – mid-2014 | 2014 H2 |
+
+**XGBoost:** a random search over 20 configurations (tree depth, learning rate, minimum child weight, subsampling, and L2 regularization), plus the original settings.
+
+| Rank | Depth | Learning rate | Min child weight | Subsample | Column sample | L2 | CV AUC |
+|---|---|---|---|---|---|---|---|
+| 1 | 4 | 0.02 | 50 | 0.6 | 1.0 | 5.0 | 0.6544 ± 0.0018 |
+| 2 | 4 | 0.02 | 50 | 0.8 | 0.6 | 0.5 | 0.6543 ± 0.0019 |
+| 3 | 2 | 0.10 | 50 | 0.8 | 0.8 | 10.0 | 0.6542 ± 0.0017 |
+| 4 | 6 | 0.05 | 50 | 0.8 | 0.6 | 10.0 | 0.6538 ± 0.0021 |
+| **5 (original)** | **4** | **0.05** | **1** | **0.8** | **0.8** | **1.0** | **0.6538 ± 0.0022** |
+
+**Logistic regression:** cross-validated AUC was between 0.648 and 0.650 for every regularization strength from C = 0.001 to 10.
+
+**Interpretation:**
+- **Hyperparameters barely matter.** All 21 XGBoost configurations scored between 0.652 and 0.654, with differences within fold-to-fold noise; the original settings ranked fifth, 0.0006 below the best. Regularization made no meaningful difference to the logistic regression, as expected with 300,000 loans and about 25 inputs.
+- **An apparent tuning gain was tested and explained.** The tuned XGBoost scored 0.661 on 2015, far above what cross-validation suggested. Refitting the **original** settings on the same data scored **0.661 as well**, showing the gain came entirely from **training on all of 2012–2014, including the most recent vintage**, rather than from the tuned settings.
+- **That finding changed the production training design.** XGBoost originally trained on 2012–2013 only, with 2014 reserved for early stopping. It now uses early stopping to choose the tree count, then refits on all of 2012–2014, matching the logistic regression's training data and making the model comparison fair.
+- **The model is limited by the information in the data, not its settings.**
+
+Early stopping uses each fold's validation set to choose the tree count, which makes fold AUCs slightly optimistic; this affects every configuration equally, so the ranking remains fair, and the 2015 test set was not used for any selection.
 
 ### Weight of Evidence scorecard
 A traditional retail credit scorecard (`woe.py`) was built as a transparent challenger. Each feature is split into up to ten quantile bins (or its categories, with those under 1% grouped), and each bin is replaced by its **Weight of Evidence**: `ln(share of good loans in the bin ÷ share of bad loans in the bin)`, so positive values indicate lower risk. Bins and WoE values are fit on training data only.
@@ -228,7 +262,7 @@ The scorecard uses the industry-standard scaling: **600 points corresponds to 50
 ![WoE score bands](reports/figures/woe_score_bands.png)
 
 **Interpretation:**
-- **The scorecard nearly matches the benchmark** (AUC 0.651 vs. 0.655) using **half the features**, with every bin's contribution visible in a points table. That is the classic scorecard tradeoff: a small loss in accuracy for full transparency.
+- **The scorecard nearly matches the benchmark logistic regression** (AUC 0.651 vs. 0.655) using **half the features**, with every bin's contribution visible in a points table. That is the classic scorecard tradeoff: a small loss in accuracy for full transparency.
 - **Every coefficient has the expected negative sign**, so each feature moves risk in the economically sensible direction.
 - **Default rates fall steadily with score**, from 27.5% in the riskiest band to 4.4% in the safest.
 - **The same underprediction appears in every band but the top one**, the concept drift found throughout this project.
@@ -305,7 +339,7 @@ Two designs were compared:
 - **The strict design produced a correction about three times larger.** A model that never saw 2014 underpredicted it more, so the shift was larger. The original design's small shift was partly an artifact of 2014 being in its training data.
 - **Both designs land at about the same 2015 estimate,** 13.3–13.4% against an actual 14.89%. The strict model starts lower, having learned from lower-default years with less data, and its larger shift brings it back to roughly the same level.
 - **The remaining gap of about 1.5 percentage points is therefore genuine concept drift,** not a byproduct of the recalibration design. Even a properly held-out recalibration cannot anticipate a shift that has not yet appeared in realized defaults.
-- **The strict model's AUC is slightly lower** (0.651 vs. 0.655), consistent with training on about 40% less data.
+- **The strict model's AUC is slightly lower** (0.651 vs. 0.655), consistent with training on about 40% less data, the same recency effect found in the tuning analysis.
 
 One note on the strict design: missing feature values in the training data were imputed with medians computed over all of 2012–2014. This affects only feature fill-in values, not outcomes, so no default information from 2014 leaks into the strict model.
 
@@ -395,11 +429,11 @@ SHAP values were computed natively with XGBoost (`pred_contribs`) on a 5,000-loa
 ![SHAP importance](reports/figures/shap_importance.png)
 
 **Reason codes for the highest-risk loan in the sample**, the kind of output that supports adverse action notices:
-1. High loan-to-income ratio
+1. High debt-to-income
 2. Low FICO score
-3. High debt-to-income
-4. A rare loan purpose
-5. High revolving utilization
+3. Missing employment length
+4. Low annual income
+5. Medical loan purpose
 
 ### Plot: partial dependence
 Partial dependence shows how average predicted risk changes as debt-to-income, FICO, revolving utilization, and loan-to-income change.
@@ -411,8 +445,8 @@ XGBoost was retrained with monotonic constraints so that higher DTI, revolving u
 
 | Model | Out-of-time AUC |
 |---|---|
-| Unconstrained XGBoost | 0.655 |
-| Monotonic XGBoost | 0.654 |
+| Unconstrained XGBoost | 0.660 |
+| Monotonic XGBoost | 0.659 |
 
 The constraints cost essentially **nothing** in accuracy while guaranteeing intuitive, defensible behavior, so the constrained version is preferred whenever a tree-based model is used.
 
@@ -434,7 +468,7 @@ A parity check (`compare_engines.py`) reconciles the two engines year by year:
 The two pipelines produce identical results, so the modeling steps can run on either engine. Spark runs locally here (`local[*]`), but the same code scales to a cluster for larger datasets.
 
 ### Automated tests
-**36 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
+**38 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
 
 | Test file | What it checks |
 |---|---|
@@ -443,6 +477,7 @@ The two pipelines produce identical results, so the modeling steps can run on ei
 | `test_recalibration.py` | The intercept shift hits its target, preserves ranking, does nothing when already calibrated, and keeps PDs between 0 and 1; the recalibration holdout is fully separate from the fit period |
 | `test_monitor.py` | Categorical PSI is zero for identical mixes and flags large shifts; binary and text features use category shares rather than decile bins; traffic-light thresholds match the model card |
 | `test_woe.py` | Safer bins get positive WoE, IV is high for predictive features and near zero for unrelated ones, unseen categories get neutral WoE, out-of-range values are binned, and the score scale is exact (600 points at 50:1 odds, +20 points per doubling) |
+| `test_tuning.py` | Every cross-validation fold trains only on loans issued before its validation period, and sampled hyperparameters stay within range |
 | `test_features.py` | Employment length parsing, missing indicators, safe handling of zero income, and no modification of input data |
 | `test_spark_pipeline.py` | The Spark pipeline keeps only completed 36-month loans, sets the default flag correctly, and parses issue dates |
 | `test_preprocessing.py` | Every script uses the same preprocessing definition, so encoder settings can't drift between model comparisons |
@@ -465,9 +500,9 @@ reports/
 This makes every result traceable to the exact code and settings that produced it.
 
 ### Other practices
-- **Shared preprocessing:** a single definition of the preprocessing and benchmark logistic model (`make_preprocessor` and `make_logit` in `train.py`), reused by every script, so comparisons such as base vs. macro-enhanced stay consistent.
+- **Shared preprocessing and settings:** a single definition of the preprocessing, benchmark logistic model, and XGBoost settings (`make_preprocessor`, `make_logit`, and `XGB_PARAMS` in `train.py`), reused by every script, so comparisons stay consistent.
 - **Pinned dependencies** in `requirements.txt` for exact reproducibility.
-- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make monitor`, `make woe`, `make spark`, and so on).
+- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make monitor`, `make woe`, `make tune`, `make spark`, and so on).
 - **A model card** (`docs/model_card.md`) summarizing intended use, performance, limitations, and a monitoring plan with review triggers.
 - **Credentials kept out of the code**: the Kaggle token lives in `~/.kaggle/`, and the FRED key in an untracked `.env` file.
 
@@ -475,7 +510,7 @@ This makes every result traceable to the exact code and settings that produced i
 
 ## 10. Limitations
 
-- **Modest discrimination.** An AUC of 0.655 reflects an independent model using application data only. Lending Club's grade and interest rate, which were deliberately excluded, carry substantial predictive information. Macro features did not improve ranking, and the WoE analysis shows that only FICO reaches medium predictive strength on its own.
+- **Modest discrimination.** An AUC of 0.655–0.660 reflects an independent model using application data only. Lending Club's grade and interest rate, which were deliberately excluded, carry substantial predictive information. Macro features and hyperparameter tuning did not improve ranking, and the WoE analysis shows that only FICO reaches medium predictive strength on its own.
 - **Residual miscalibration.** The base model underpredicts 2015 defaults by about 1.7 percentage points. Recalibration, under both the original and strict designs, reduced this only to about 1.5 points, and the macro-enhanced model still underpredicts by about 0.8 points.
 - **Untrustworthy national macro relationship.** National unemployment's coefficient reflects a single phase of the credit cycle, estimated from roughly 36 monthly observations, and has a counterintuitive sign that would mislead the model in a downturn.
 - **WoE bins are not forced to be monotonic.** Bins come from quantiles rather than an optimized monotonic binning, so WoE may not rise or fall smoothly across every feature's bins.
@@ -483,7 +518,7 @@ This makes every result traceable to the exact code and settings that produced i
 - **In-sample early warning.** The rising calibration gap in late 2014 appears in quarters that were part of the training data, so it illustrates what monitoring would show rather than a true out-of-sample early warning.
 - **Lifetime target, not a 12-month PD.** The model predicts default over the 36-month term, which differs from the 12-month PDs common in some regulatory and accounting contexts. It is closer in spirit to a lifetime loss view, but it is not a full CECL model.
 - **Approved loans only.** The data includes only loans Lending Club approved, so the model has not seen rejected applicants. Using it for underwriting decisions would require addressing this selection bias (reject inference).
-- **Limited feature set and tuning.** Features are a compact set of origination variables, and XGBoost hyperparameters were set sensibly rather than tuned through a full search.
+- **Compact feature set.** Features are a compact set of origination variables; richer data, such as tradeline-level bureau history, would likely matter more than further model tuning.
 - **Platform-specific data.** Lending Club's borrower base, underwriting, and history may not generalize to other lenders or loan products.
 
 ---
@@ -498,7 +533,6 @@ This makes every result traceable to the exact code and settings that produced i
 **Modeling**
 - **Monotonic, optimized binning** for the WoE scorecard, so each feature's risk rises or falls smoothly across bins.
 - A **survival or discrete-time hazard model**, which handles loans that have not yet matured directly, rather than excluding later vintages.
-- **Hyperparameter tuning** with time-aware cross-validation.
 - A **full expected loss** estimate (PD × LGD × EAD) using recovery data, as a step toward a CECL-style framework.
 
 **Engineering**
@@ -530,7 +564,7 @@ credit_default_model_project/
 │   ├── download.py            # Kaggle API download
 │   ├── data.py                # SQL load into DuckDB
 │   ├── features.py            # cleaning, features, out-of-time split
-│   ├── train.py               # shared preprocessing, logistic regression, and XGBoost
+│   ├── train.py               # shared preprocessing and settings, logistic regression, XGBoost
 │   ├── evaluate.py            # AUC, Gini, KS, calibration, ROC, PSI
 │   ├── recalibrate.py         # original and strict (2014 holdout) recalibration designs
 │   ├── fred.py                # FRED API pull and SQL macro join
@@ -538,6 +572,7 @@ credit_default_model_project/
 │   ├── explain.py             # odds ratios, SHAP, partial dependence, monotonic constraints
 │   ├── monitor.py             # quarterly monitoring: feature PSI, score PSI, AUC, calibration
 │   ├── woe.py                 # Weight of Evidence binning, IV, and points-based scorecard
+│   ├── tune.py                # time-aware hyperparameter tuning
 │   ├── spark_pipeline.py      # PySpark version of the loan-table pipeline
 │   └── compare_engines.py     # DuckDB vs. Spark parity check
 ├── tests/
@@ -548,6 +583,7 @@ credit_default_model_project/
 │   ├── test_preprocessing.py
 │   ├── test_recalibration.py
 │   ├── test_spark_pipeline.py
+│   ├── test_tuning.py
 │   └── test_woe.py
 ├── tools/
 │   └── export_codebase.py     # prints the project tree and saves code snapshots
@@ -585,17 +621,22 @@ make all
 ```
 This builds the data, trains and evaluates the models, recalibrates, adds macro features, runs explainability, the monitoring report, and the WoE scorecard, and archives everything to `reports/runs/<timestamp>/`.
 
-**5. Run the Spark pipeline and parity check**
+**5. Run hyperparameter tuning (optional, about 20–30 minutes)**
+```bash
+make tune
+```
+
+**6. Run the Spark pipeline and parity check**
 ```bash
 make spark
 ```
 
-**6. Run the tests**
+**7. Run the tests**
 ```bash
 make test
 ```
 
-Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, `make monitor`, `make woe`, and `make spark`.
+Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, `make monitor`, `make woe`, `make tune`, and `make spark`.
 
 ---
 

@@ -1,3 +1,4 @@
+# pylint: disable=wrong-import-position
 """Explainability: odds ratios, SHAP, partial dependence, and monotonic constraints."""
 import joblib
 import matplotlib
@@ -12,7 +13,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 from src.credit_default.config import DATA_DIR, MODEL_DIR, FIG_DIR, RANDOM_SEED
-from src.credit_default.train import NUMERIC, CATEGORICAL, TARGET
+from src.credit_default.train import NUMERIC, CATEGORICAL, TARGET, XGB_PARAMS, ES_SPLIT
 
 FEATURES = NUMERIC + CATEGORICAL
 SAMPLE_SIZE = 5000
@@ -69,7 +70,7 @@ def shap_analysis(prep, model, sample):
 def partial_dependence(prep, model, sample):
     """Plot: how predicted risk changes as one feature changes."""
     pipe = Pipeline([("prep", prep), ("model", model)])
-    fig, ax = plt.subplots(figsize=(10, 6))
+    _, ax = plt.subplots(figsize=(10, 6))
     PartialDependenceDisplay.from_estimator(
         pipe, sample[FEATURES],
         features=["dti", "fico_range_low", "revol_util", "loan_to_income"],
@@ -81,22 +82,22 @@ def monotonic_model(prep, train, test, base_auc):
     """Constrain: retrain XGBoost with monotonic constraints and compare AUC."""
     names = prep.get_feature_names_out()
     constraints = tuple(DIRECTIONS.get(n, 0) for n in names)
+    params = {**XGB_PARAMS, "monotone_constraints": constraints, "random_state": RANDOM_SEED}
 
-    fit_part = train["issue_date"] < "2014-01-01"
+    # Step 1: early stopping on 2014 chooses the tree count
+    fit_part = train["issue_date"] < ES_SPLIT
     X_fit = dense(prep.transform(train.loc[fit_part, FEATURES]))
     X_val = dense(prep.transform(train.loc[~fit_part, FEATURES]))
-    X_test = dense(prep.transform(test[FEATURES]))
+    es = XGBClassifier(n_estimators=2000, eval_metric="auc", early_stopping_rounds=50, **params)
+    es.fit(X_fit, train.loc[fit_part, TARGET],
+           eval_set=[(X_val, train.loc[~fit_part, TARGET])], verbose=False)
 
-    mono = XGBClassifier(
-        n_estimators=2000, learning_rate=0.05, max_depth=4,
-        subsample=0.8, colsample_bytree=0.8,
-        eval_metric="auc", early_stopping_rounds=50,
-        monotone_constraints=constraints, random_state=RANDOM_SEED)
-    mono.fit(X_fit, train.loc[fit_part, TARGET],
-             eval_set=[(X_val, train.loc[~fit_part, TARGET])], verbose=False)
+    # Step 2: refit on all of 2012-2014 with that tree count
+    mono = XGBClassifier(n_estimators=es.best_iteration + 1, **params)
+    mono.fit(dense(prep.transform(train[FEATURES])), train[TARGET])
 
-    auc = roc_auc_score(test[TARGET], mono.predict_proba(X_test)[:, 1])
-    print(f"\n=== Monotonic constraints ===")
+    auc = roc_auc_score(test[TARGET], mono.predict_proba(dense(prep.transform(test[FEATURES])))[:, 1])
+    print("\n=== Monotonic constraints ===")
     print(f"Unconstrained XGBoost AUC: {base_auc:.3f}")
     print(f"Monotonic XGBoost AUC:     {auc:.3f}")
     joblib.dump({"prep": prep, "model": mono}, MODEL_DIR / "xgb_monotonic.joblib")

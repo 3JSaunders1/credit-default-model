@@ -1,0 +1,70 @@
+feature,bin,woe,points
+fico_range_low,"(-inf, 665.0]",-0.3635,59
+fico_range_low,"(665.0, 670.0]",-0.297,60
+fico_range_low,"(670.0, 675.0]",-0.1991,63
+fico_range_low,"(675.0, 680.0]",-0.1801,63
+fico_range_low,"(680.0, 690.0]",-0.0536,66
+fico_range_low,"(690.0, 695.0]",0.035,69
+fico_range_low,"(695.0, 705.0]",0.1722,72
+fico_range_low,"(705.0, 715.0]",0.331,76
+fico_range_low,"(715.0, 735.0]",0.5234,80
+fico_range_low,"(735.0, inf]",0.9506,91
+log_annual_inc,"(-inf, 10.373]",-0.4682,61
+log_annual_inc,"(10.373, 10.597]",-0.3142,63
+log_annual_inc,"(10.597, 10.736]",-0.1682,65
+log_annual_inc,"(10.736, 10.878]",-0.0677,67
+log_annual_inc,"(10.878, 11.002]",-0.0268,67
+log_annual_inc,"(11.002, 11.156]",0.0781,69
+log_annual_inc,"(11.156, 11.29]",0.1765,70
+log_annual_inc,"(11.29, 11.454]",0.3238,73
+log_annual_inc,"(11.454, 11.695]",0.4005,74
+log_annual_inc,"(11.695, inf]",0.491,75
+dti,"(-inf, 7.01]",0.305,73
+dti,"(12.37, 14.54]",0.1629,71
+dti,"(14.54, 16.72]",0.0734,69
+dti,"(16.72, 18.96]",0.0048,68
+dti,"(18.96, 21.4]",-0.0669,66
+dti,"(21.4, 24.27]",-0.1557,65
+dti,"(24.27, 28.05]",-0.2581,63
+dti,"(28.05, inf]",-0.3688,61
+dti,"(7.01, 9.99]",0.2542,72
+dti,"(9.99, 12.37]",0.22,72
+loan_to_income,"(-inf, 0.0727]",0.288,74
+loan_to_income,"(0.0727, 0.104]",0.1823,72
+loan_to_income,"(0.104, 0.131]",0.1909,72
+loan_to_income,"(0.131, 0.157]",0.1435,71
+loan_to_income,"(0.157, 0.184]",0.0735,69
+loan_to_income,"(0.184, 0.213]",0.0414,69
+loan_to_income,"(0.213, 0.25]",-0.0015,68
+loan_to_income,"(0.25, 0.29]",-0.1198,65
+loan_to_income,"(0.29, 0.346]",-0.2876,62
+loan_to_income,"(0.346, inf]",-0.3739,60
+home_ownership,MORTGAGE,0.2197,71
+home_ownership,OWN,-0.0652,67
+home_ownership,RARE/UNSEEN,-0.3309,62
+home_ownership,RENT,-0.1941,65
+inq_last_6mths,0.0,0.151,72
+inq_last_6mths,1.0,-0.0602,66
+inq_last_6mths,2.0,-0.2385,60
+inq_last_6mths,3.0,-0.3056,58
+inq_last_6mths,4.0,-0.3586,57
+inq_last_6mths,RARE/UNSEEN,-0.3989,55
+purpose,RARE/UNSEEN,-0.2254,61
+purpose,car,0.2367,74
+purpose,credit_card,0.1886,73
+purpose,debt_consolidation,-0.0445,66
+purpose,home_improvement,0.1605,72
+purpose,major_purchase,0.1271,71
+purpose,medical,-0.272,60
+purpose,other,-0.2173,62
+purpose,small_business,-0.6267,50
+revol_util,"(-inf, 23.8]",0.3288,69
+revol_util,"(23.8, 34.6]",0.1515,68
+revol_util,"(34.6, 42.9]",0.1111,68
+revol_util,"(42.9, 50.0]",0.008,68
+revol_util,"(50.0, 56.7]",-0.0116,68
+revol_util,"(56.7, 63.2]",-0.0168,68
+revol_util,"(63.2, 70.0]",-0.0919,67
+revol_util,"(70.0, 77.5]",-0.0893,67
+revol_util,"(77.5, 86.3]",-0.0979,67
+revol_util,"(86.3, inf]",-0.216,67

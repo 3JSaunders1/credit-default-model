@@ -17,13 +17,14 @@ validation practices. Not intended for real credit decisions.
 - Optional macro features from the FRED API (national and state unemployment, federal funds rate)
 
 ## Performance (2015 out-of-time)
-- AUC 0.655, Gini 0.31, KS 0.22
+- AUC 0.655 (logistic regression) and 0.660 (XGBoost, trained on the same data); Gini 0.31–0.32, KS 0.22–0.23
 - Mean predicted PD 13.2% vs. actual 14.9%
   - 13.4% after recalibration on the 2014 vintage (13.3% under a strict design with 2014 held out)
   - 14.1% with macro features
 - Score PSI 0.001
-- Monotonic XGBoost AUC 0.654 vs. 0.655 unconstrained
+- Monotonic XGBoost AUC 0.659 vs. 0.660 unconstrained
 - WoE scorecard AUC 0.651 using 8 of 16 features
+- Time-aware tuning: 21 XGBoost configurations within 0.003 AUC; settings are not the bottleneck
 
 ## Known limitations
 - Modest discrimination; Lending Club grade and interest rate deliberately excluded

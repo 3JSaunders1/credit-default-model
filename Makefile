@@ -44,6 +44,9 @@ monitor: run-dir
 woe: run-dir
 	python -m src.credit_default.woe 2>&1 | tee -a $(LOG)
 
+tune: run-dir
+	python -m src.credit_default.tune 2>&1 | tee -a $(LOG)
+
 spark: run-dir
 	python -m src.credit_default.spark_pipeline 2>&1 | tee -a $(LOG)
 	python -m src.credit_default.compare_engines 2>&1 | tee -a $(LOG)

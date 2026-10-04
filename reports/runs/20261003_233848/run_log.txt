@@ -1,0 +1,212 @@
+    year   loans  default_rate_pct
+0   2007     251              17.9
+1   2008    1562              15.8
+2   2009    4716              12.6
+3   2010    8466               9.9
+4   2011   14101              10.6
+5   2012   43470              13.6
+6   2013  100422              12.3
+7   2014  162570              13.7
+8   2015  283026              14.9
+9   2016  232353              19.8
+10  2017  128538              20.0
+11  2018   41268              13.2
+Saved /Users/johnsaunders/Desktop/credit_default_model_project/data/processed/loans.parquet
+Train: 306,462 loans, default rate 13.2%
+Test:  283,026 loans, default rate 14.9%
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [0] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+XGBoost early stopping chose 208 trees
+pd_logit: test AUC = 0.655, Gini = 0.310
+pd_xgb: test AUC = 0.660, Gini = 0.320
+
+=== Out-of-time test performance (2015 vintage) ===
+              model   AUC  Gini    KS  mean_predicted_PD  actual_rate
+Logistic regression 0.655  0.31 0.223              0.132        0.149
+            XGBoost 0.660  0.32 0.232              0.133        0.149
+
+=== Calibration by risk decile (logistic regression) ===
+        loans  predicted  actual
+bucket                          
+0       28303     0.0417  0.0428
+1       28303     0.0681  0.0760
+2       28302     0.0854  0.0976
+3       28303     0.1004  0.1136
+4       28302     0.1150  0.1355
+5       28303     0.1305  0.1485
+6       28302     0.1477  0.1751
+7       28303     0.1686  0.1923
+8       28302     0.1979  0.2259
+9       28303     0.2655  0.2813
+
+=== Score PSI, train (2012–2014) vs. test (2015): 0.001 ===
+
+Saved figures and tables to /Users/johnsaunders/Desktop/credit_default_model_project/reports/figures
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [0] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [0, 1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+
+=== Recalibration designs compared (2015 actual default rate: 14.89%) ===
+                     design  holdout_predicted  holdout_actual  shift  test_before  test_after  test_auc
+Original (2014 in training)             0.1350          0.1373 0.0203       0.1321      0.1343    0.6549
+     Strict (2014 held out)             0.1302          0.1373 0.0637       0.1264      0.1333    0.6509
+
+Saved comparison, plot, and recalibration to /Users/johnsaunders/Desktop/credit_default_model_project/reports/figures and /Users/johnsaunders/Desktop/credit_default_model_project/models
+Loaded national series: ['UNRATE', 'FEDFUNDS']
+Loaded state unemployment for 51 states
+Share of loans missing state unemployment: 0.70%
+Saved /Users/johnsaunders/Desktop/credit_default_model_project/data/processed/loans_macro.parquet
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+
+=== Base vs. macro-enhanced model (2015 out-of-time) ===
+       model   AUC  Gini mean_PD actual
+        Base 0.655  0.31  13.21% 14.89%
+Base + macro 0.655  0.31  14.09% 14.89%
+
+=== Macro odds ratios (per 1 SD) ===
+num__unemployment_rate      0.951
+num__fed_funds_rate         1.023
+num__state_unemp            1.034
+num__state_unemp_chg_12m    1.007
+
+=== Calibration by decile ===
+        base_pred  macro_pred  actual
+bucket                               
+0          0.0417      0.0452  0.0428
+1          0.0681      0.0735  0.0760
+2          0.0854      0.0919  0.0976
+3          0.1004      0.1078  0.1136
+4          0.1150      0.1232  0.1355
+5          0.1305      0.1395  0.1485
+6          0.1477      0.1577  0.1751
+7          0.1686      0.1796  0.1923
+8          0.1979      0.2102  0.2259
+9          0.2655      0.2800  0.2813
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+
+=== Top logistic regression effects (odds ratio per 1 SD for numeric) ===
+                        feature   coef  odds_ratio
+    cat__purpose_small_business  0.874       2.398
+           cat__purpose_medical  0.392       1.479
+            num__fico_range_low -0.359       0.699
+cat__purpose_infrequent_sklearn  0.341       1.406
+             cat__purpose_other  0.304       1.356
+       cat__home_ownership_RENT  0.263       1.301
+       cat__purpose_credit_card -0.179       0.836
+            num__inq_last_6mths  0.167       1.181
+            num__log_annual_inc -0.160       0.852
+            num__loan_to_income  0.149       1.161
+
+=== Top 5 reasons for the highest-risk loan in the sample ===
+num__dti                       0.281
+num__fico_range_low            0.264
+num__emp_length_yrs_missing    0.262
+num__log_annual_inc            0.256
+cat__purpose_medical           0.240
+
+=== Monotonic constraints ===
+Unconstrained XGBoost AUC: 0.660
+Monotonic XGBoost AUC:     0.659
+
+Saved explainability figures to /Users/johnsaunders/Desktop/credit_default_model_project/reports/figures
+/Users/johnsaunders/Desktop/credit_default_model_project/venv/lib/python3.11/site-packages/sklearn/preprocessing/_encoders.py:262: UserWarning: Found unknown categories in columns [1] during transform. These unknown categories will be encoded as the infrequent category.
+  warnings.warn(msg, UserWarning)
+
+Training AUC (baseline for monitoring): 0.653
+
+=== Performance and calibration by issue quarter ===
+            period quarter  loans  actual  predicted  gap_pp    auc  score_psi       flags
+ train (in-sample)  2012Q1   6498  0.1320     0.1174  1.4655 0.6413     0.0708 calibration
+ train (in-sample)  2012Q2   8469  0.1423     0.1257  1.6556 0.6496     0.0208 calibration
+ train (in-sample)  2012Q3  13322  0.1419     0.1331  0.8802 0.6644     0.0020        none
+ train (in-sample)  2012Q4  15181  0.1284     0.1332 -0.4861 0.6410     0.0009        none
+ train (in-sample)  2013Q1  17988  0.1259     0.1333 -0.7422 0.6594     0.0018        none
+ train (in-sample)  2013Q2  23136  0.1284     0.1303 -0.1880 0.6596     0.0024        none
+ train (in-sample)  2013Q3  27318  0.1221     0.1297 -0.7546 0.6487     0.0036        none
+ train (in-sample)  2013Q4  31980  0.1191     0.1274 -0.8335 0.6517     0.0074        none
+ train (in-sample)  2014Q1  34074  0.1287     0.1339 -0.5282 0.6438     0.0010        none
+ train (in-sample)  2014Q2  37881  0.1355     0.1338  0.1642 0.6525     0.0008        none
+ train (in-sample)  2014Q3  40595  0.1363     0.1343  0.1962 0.6599     0.0018        none
+ train (in-sample)  2014Q4  50020  0.1453     0.1370  0.8238 0.6517     0.0050        none
+test (out-of-time)  2015Q1  56568  0.1483     0.1364  1.1963 0.6500     0.0035 calibration
+test (out-of-time)  2015Q2  64222  0.1538     0.1339  1.9899 0.6515     0.0007 calibration
+test (out-of-time)  2015Q3  73567  0.1458     0.1304  1.5415 0.6596     0.0029 calibration
+test (out-of-time)  2015Q4  88669  0.1482     0.1294  1.8730 0.6565     0.0043 calibration
+
+=== Feature PSI: training vs. 2015 (overall and worst quarter) ===
+               feature  psi_2015  max_quarter_psi status
+        inq_last_6mths    0.0440           0.0613  green
+            revol_util    0.0243           0.0427  green
+               purpose    0.0254           0.0413  green
+                   dti    0.0279           0.0305  green
+             loan_amnt    0.0082           0.0140  green
+               pub_rec    0.0122           0.0136  green
+              open_acc    0.0117           0.0133  green
+        fico_range_low    0.0049           0.0120  green
+        log_annual_inc    0.0043           0.0102  green
+        loan_to_income    0.0034           0.0090  green
+        home_ownership    0.0051           0.0066  green
+emp_length_yrs_missing    0.0033           0.0064  green
+           delinq_2yrs    0.0041           0.0049  green
+        emp_length_yrs    0.0018           0.0030  green
+    revol_util_missing    0.0000           0.0001  green
+           dti_missing    0.0000           0.0001  green
+
+Saved monitoring tables and dashboard to /Users/johnsaunders/Desktop/credit_default_model_project/reports/figures
+
+=== Information value (training data) ===
+               feature     iv
+        fico_range_low 0.1320
+        log_annual_inc 0.0870
+                   dti 0.0475
+        loan_to_income 0.0431
+        home_ownership 0.0390
+        inq_last_6mths 0.0285
+               purpose 0.0220
+            revol_util 0.0207
+emp_length_yrs_missing 0.0135
+        emp_length_yrs 0.0108
+             loan_amnt 0.0078
+           delinq_2yrs 0.0011
+               pub_rec 0.0005
+              open_acc 0.0003
+    revol_util_missing 0.0000
+           dti_missing 0.0000
+
+Selected 8 of 16 features with IV >= 0.02
+
+Coefficient signs: all negative, as expected
+
+=== 2015 out-of-time performance (actual default rate 14.89%) ===
+                            model    AUC     KS  mean_PD   Gini
+Benchmark logistic (standardized) 0.6549 0.2229   0.1321 0.3097
+                    WoE scorecard 0.6511 0.2180   0.1307 0.3023
+
+=== Default rate by score band (2015) ===
+                    loans  actual  predicted
+band                                        
+(484.297, 524.442]  28303  0.2754     0.2558
+(524.442, 530.812]  28303  0.2224     0.1962
+(530.812, 535.684]  28302  0.1950     0.1680
+(535.684, 539.958]  28303  0.1743     0.1471
+(539.958, 544.084]  28302  0.1523     0.1299
+(544.084, 548.369]  28303  0.1328     0.1144
+(548.369, 553.087]  28302  0.1160     0.0996
+(553.087, 558.914]  28304  0.1001     0.0846
+(558.914, 567.711]  28301  0.0768     0.0676
+(567.711, 599.808]  28303  0.0435     0.0440
+
+Score range: 484 to 600, median 544
+
+Saved scorecard, IV table, score bands, and chart to /Users/johnsaunders/Desktop/credit_default_model_project/reports/figures
