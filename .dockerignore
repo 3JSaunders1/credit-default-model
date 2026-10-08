@@ -1,0 +1,11 @@
+venv/
+.git/
+.env
+data/
+models/
+reports/runs/
+tools/snapshots/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store

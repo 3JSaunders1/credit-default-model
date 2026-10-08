@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml/badge.svg)](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml)
 
-An end-to-end credit risk model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: probability of default (PD) with out-of-time validation, discrimination and calibration metrics, an expected loss framework (PD × LGD × EAD) validated against realized losses, time-aware hyperparameter tuning, a Weight of Evidence scorecard, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, automated tests, and an honest account of limitations.
+An end-to-end credit risk model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: probability of default (PD) with out-of-time validation, discrimination and calibration metrics, an expected loss framework (PD × LGD × EAD) validated against realized losses, time-aware hyperparameter tuning, a Weight of Evidence scorecard, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, threshold analysis for approve/decline decisions, automated tests, a Docker image, and an honest account of limitations.
 
 ---
 
@@ -14,6 +14,7 @@ An end-to-end credit risk model built on Lending Club loan data, developed and e
 | **Risk separation** | Actual default rates rise from **4.3%** in the lowest-risk decile to **28.1%** in the highest, about **6.6x** |
 | **Logistic regression vs. XGBoost** | On identical training data, XGBoost adds a small edge (+0.005 AUC). Monotonic XGBoost keeps nearly all of it (0.659) with economically sensible constraints |
 | **Expected loss** | Predicted 2015 losses of $234.5M vs. $274.0M actual (−14%). Decomposition shows almost the entire shortfall came from PD; LGD (88.9%) and EAD (57.5%) held within about 1% of their assumptions |
+| **Approval policy** | Keeping approved loans' default rate under 10% means declining applicants with PD of 12.5% or more: approving 52% of applicants while catching 67% of defaulters |
 | **Hyperparameter tuning** | 21 configurations under time-aware cross-validation all scored within 0.003 AUC. An apparent tuning gain turned out to come entirely from training on more recent data |
 | **WoE scorecard** | A classic points-based scorecard nearly matches the benchmark logistic regression (AUC 0.651 vs. 0.655) using half the features, with every coefficient correctly signed |
 | **Calibration** | The base model **underpredicts** 2015 defaults: 13.2% predicted vs. 14.9% actual |
@@ -24,7 +25,7 @@ An end-to-end credit risk model built on Lending Club loan data, developed and e
 | **Macro features** | Cut the calibration gap roughly in half (14.1% vs. 14.9% actual), but national unemployment showed a counterintuitive, cycle-driven sign that should not be trusted in production |
 | **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income, DTI), with SHAP reason codes for individual loans |
 | **Scaling** | The data pipeline is also implemented in **PySpark**, reconciled against the DuckDB SQL version across 1,020,743 loans with **zero discrepancies** |
-| **Engineering** | 42 automated tests run on every push, shared preprocessing and model settings across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
+| **Engineering** | 46 automated tests run on every push, a Docker image for one-command reproducibility, shared preprocessing and model settings across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
 
 ---
 
@@ -40,7 +41,7 @@ The project emphasizes:
 - **Monitoring**: tracking inputs, ranking, and calibration over time to understand whether performance changes come from data drift or concept drift.
 - **Explainability**: making model behavior transparent and defensible, as lenders must be able to explain credit decisions.
 - **Questioning results**: testing whether an improvement is trustworthy, not just whether a metric went up.
-- **Reproducibility**: tests, pinned dependencies, and archived runs, so every result can be traced and rerun.
+- **Reproducibility**: tests, pinned dependencies, a Docker image, and archived runs, so every result can be traced and rerun.
 
 This complements my [Macro-Driven Credit Risk Lab](https://github.com/3JSaunders1/macro-credit-risk-lab), which models how macroeconomic conditions drive credit risk. This project focuses on borrower-level default prediction and loss estimation.
 
@@ -96,7 +97,7 @@ The jump in 2016–2017 is largely an artifact. The data ends in late 2018, so 3
 ```
 Kaggle API → DuckDB (SQL) → features → models → evaluation → recalibration → monitoring
            → PySpark      → parity check against DuckDB      → tuning, WoE scorecard
-           → loss outcomes (SQL) → expected loss (PD × LGD × EAD)
+           → loss outcomes (SQL) → expected loss (PD × LGD × EAD)   → threshold analysis
 FRED API   → DuckDB (SQL join) → macro comparison
                                  → explainability
 ```
@@ -115,6 +116,7 @@ FRED API   → DuckDB (SQL join) → macro comparison
 12. **WoE scorecard** (`woe.py`): Weight of Evidence binning, information value selection, a logistic regression on WoE values, and a points-based scorecard.
 13. **Hyperparameter tuning** (`tune.py`): random search for XGBoost and a regularization grid for logistic regression, under expanding-window time-aware cross-validation.
 14. **Expected loss** (`expected_loss.py`, `sql/03_loss_outcomes.sql`): LGD and EAD estimated from 2012–2014 charge-offs, combined with PD, and validated against realized 2015 losses.
+15. **Threshold analysis** (`thresholds.py`): confusion matrices, precision, recall, approval rates, and approved-loan default rates across PD cutoffs, with an example approval policy.
 
 ### Features
 **Used (all known at origination):**
@@ -200,6 +202,28 @@ All results are on the **2015 out-of-time test set** (283,026 loans).
 | Train (2012–2014) vs. test (2015) | **0.001** |
 
 A PSI below 0.10 is conventionally considered stable. At 0.001, the score distribution is essentially unchanged.
+
+### Threshold analysis: from PD to an approval policy
+A PD model ultimately feeds a decision: approve or decline. `thresholds.py` evaluates the logistic regression's 2015 PDs across cutoffs, treating a PD at or above the threshold as a decline:
+
+| Decline if PD ≥ | Precision | Recall | Approval rate | Default rate of approved loans |
+|---|---|---|---|---|
+| 7.5% | 17.0% | 92.8% | 18.6% | 5.8% |
+| 10.0% | 18.7% | 82.1% | 34.7% | 7.7% |
+| **12.5%** | **20.7%** | **67.2%** | **51.6%** | **9.5%** |
+| 15.0% | 22.8% | 51.7% | 66.3% | 10.9% |
+| 20.0% | 26.8% | 25.6% | 85.8% | 12.9% |
+| 30.0% | 33.5% | 4.0% | 98.2% | 14.5% |
+
+The full table, including confusion-matrix counts and F1, is in `reports/figures/threshold_analysis.csv`.
+
+![Threshold analysis](reports/figures/threshold_analysis.png)
+
+**Interpretation:**
+- **Precision is low at every cutoff** (about 16% to 37%), as expected with a 15% default rate and an AUC of 0.655: most loans flagged as risky still repay.
+- **The tradeoff is steep.** An example policy that keeps approved loans' default rate at or below 10% declines PDs of 12.5% or more, approving only **52%** of applicants while catching **67%** of defaulters, compared with a 14.9% default rate if every applicant were approved.
+- **This is the practical cost of modest discrimination,** and it shows why lenders rely on richer data, such as bureau tradelines and their own risk grades, which this model deliberately excludes.
+- **Concept drift affects cutoffs too.** Because the model underpredicts 2015 PDs, a cutoff chosen on these probabilities would be too lenient in practice; thresholds should be set on recalibrated PDs and monitored over time.
 
 ### Expected loss (PD × LGD × EAD)
 The PD model was extended to dollar losses (`expected_loss.py`):
@@ -520,8 +544,18 @@ A parity check (`compare_engines.py`) reconciles the two engines year by year:
 
 The two pipelines produce identical results, so the modeling steps can run on either engine. Spark runs locally here (`local[*]`), but the same code scales to a cluster for larger datasets.
 
+### Docker
+The project ships with a `Dockerfile` that pins Python 3.11 and Java 17 (for PySpark), so it runs identically on any machine with Docker:
+
+```bash
+make docker-test     # build the image and run the full test suite in a container
+make docker-run      # run the full pipeline in a container, using local data and credentials
+```
+
+Data, models, and credentials are never copied into the image (`.dockerignore` excludes them). Instead, `docker-run` mounts the local `data/`, `models/`, and `reports/` folders, the Kaggle token (read-only), and the `.env` file at runtime.
+
 ### Automated tests
-**42 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
+**46 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
 
 | Test file | What it checks |
 |---|---|
@@ -532,6 +566,7 @@ The two pipelines produce identical results, so the modeling steps can run on ei
 | `test_woe.py` | Safer bins get positive WoE, IV is high for predictive features and near zero for unrelated ones, unseen categories get neutral WoE, out-of-range values are binned, and the score scale is exact (600 points at 50:1 odds, +20 points per doubling) |
 | `test_tuning.py` | Every cross-validation fold trains only on loans issued before its validation period, and sampled hyperparameters stay within range |
 | `test_expected_loss.py` | Full recovery means zero LGD and no recovery means full LGD; loans with no exposure are dropped; LGD and EAD ratios stay between 0 and 1; expected loss equals PD × LGD × EAD |
+| `test_thresholds.py` | Confusion-matrix counts add up, a perfectly separating model has precision and recall of 1, approval rates rise with the threshold, and the selected policy respects its default-rate cap |
 | `test_features.py` | Employment length parsing, missing indicators, safe handling of zero income, and no modification of input data |
 | `test_spark_pipeline.py` | The Spark pipeline keeps only completed 36-month loans, sets the default flag correctly, and parses issue dates |
 | `test_preprocessing.py` | Every script uses the same preprocessing definition, so encoder settings can't drift between model comparisons |
@@ -556,7 +591,7 @@ This makes every result traceable to the exact code and settings that produced i
 ### Other practices
 - **Shared preprocessing and settings:** a single definition of the preprocessing, benchmark logistic model, and XGBoost settings (`make_preprocessor`, `make_logit`, and `XGB_PARAMS` in `train.py`), reused by every script, so comparisons stay consistent.
 - **Pinned dependencies** in `requirements.txt` for exact reproducibility.
-- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make monitor`, `make woe`, `make el`, `make tune`, `make spark`, and so on).
+- **One-command pipeline** with `make all`, plus individual steps (`make train`, `make thresholds`, `make monitor`, `make woe`, `make el`, `make tune`, `make spark`, and so on), and `make docker-test` for a containerized run.
 - **A model card** (`docs/model_card.md`) summarizing intended use, performance, limitations, and a monitoring plan with review triggers.
 - **Credentials kept out of the code**: the Kaggle token lives in `~/.kaggle/`, and the FRED key in an untracked `.env` file.
 
@@ -623,6 +658,7 @@ credit_default_model_project/
 │   ├── features.py            # cleaning, features, out-of-time split
 │   ├── train.py               # shared preprocessing and settings, logistic regression, XGBoost
 │   ├── evaluate.py            # AUC, Gini, KS, calibration, ROC, PSI
+│   ├── thresholds.py          # approve/decline tradeoffs: precision, recall, approval rates
 │   ├── recalibrate.py         # original and strict (2014 holdout) recalibration designs
 │   ├── fred.py                # FRED API pull and SQL macro join
 │   ├── compare_macro.py       # base vs. macro-enhanced model comparison
@@ -642,12 +678,15 @@ credit_default_model_project/
 │   ├── test_preprocessing.py
 │   ├── test_recalibration.py
 │   ├── test_spark_pipeline.py
+│   ├── test_thresholds.py
 │   ├── test_tuning.py
 │   └── test_woe.py
 ├── tools/
 │   └── export_codebase.py     # prints the project tree and saves code snapshots
+├── .dockerignore              # keeps data, models, and secrets out of the image
+├── Dockerfile                 # reproducible environment: Python 3.11 + Java 17
 ├── LICENSE
-├── Makefile                   # one-command pipeline and run archiving
+├── Makefile                   # one-command pipeline, Docker targets, and run archiving
 ├── pytest.ini
 ├── requirements.txt           # pinned dependencies
 ├── setup_env.py               # creates the virtual environment
@@ -678,7 +717,7 @@ make download
 ```bash
 make all
 ```
-This builds the data, trains and evaluates the models, recalibrates, adds macro features, runs explainability, the monitoring report, the WoE scorecard, and the expected loss analysis, and archives everything to `reports/runs/<timestamp>/`.
+This builds the data, trains and evaluates the models, runs the threshold analysis, recalibrates, adds macro features, runs explainability, the monitoring report, the WoE scorecard, and the expected loss analysis, and archives everything to `reports/runs/<timestamp>/`.
 
 **5. Run hyperparameter tuning (optional, about 20–30 minutes)**
 ```bash
@@ -695,10 +734,16 @@ make spark
 make test
 ```
 
-Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make recalibrate`, `make macro`, `make explain`, `make monitor`, `make woe`, `make el`, `make tune`, and `make spark`.
+**8. Or run everything in Docker** (no local Python or Java setup needed)
+```bash
+make docker-test     # tests in a container
+make docker-run      # full pipeline in a container
+```
+
+Individual steps can also be run on their own: `make data`, `make features`, `make train`, `make evaluate`, `make thresholds`, `make recalibrate`, `make macro`, `make explain`, `make monitor`, `make woe`, `make el`, `make tune`, and `make spark`.
 
 ---
 
 ## 14. Tech Stack
 
-Python · SQL (DuckDB) · pandas · NumPy · SciPy · scikit-learn · XGBoost · SHAP · PySpark · Matplotlib · pytest · GitHub Actions · Make · Kaggle API · FRED API · Parquet
+Python · SQL (DuckDB) · pandas · NumPy · SciPy · scikit-learn · XGBoost · SHAP · PySpark · Matplotlib · pytest · Docker · GitHub Actions · Make · Kaggle API · FRED API · Parquet
