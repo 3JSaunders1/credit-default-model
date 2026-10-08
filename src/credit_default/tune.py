@@ -19,6 +19,11 @@ BASELINE = {"max_depth": 4, "learning_rate": 0.05, "min_child_weight": 1,
             "subsample": 0.8, "colsample_bytree": 0.8, "reg_lambda": 1.0}
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def time_folds(df: pd.DataFrame):
     """Expanding-window folds: always train on the past, validate on the future."""
     for start, end in FOLDS:
@@ -122,8 +127,6 @@ def main():
     logit_results.to_csv(FIG_DIR / "tuning_logit.csv", index=False)
     summary.to_csv(FIG_DIR / "tuning_summary.csv", index=False)
     joblib.dump({"prep": prep, "model": xgb, "params": best_params}, MODEL_DIR / "xgb_tuned.joblib")
-    print(f"\nSaved tuning results to {FIG_DIR}")
-
-
+    log.info(f"Saved tuning results to {FIG_DIR}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

@@ -21,6 +21,11 @@ OFFSET = BASE_SCORE - FACTOR * np.log(BASE_ODDS)
 RARE = "RARE/UNSEEN"
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def is_categorical(s: pd.Series) -> bool:
     return (not pd.api.types.is_numeric_dtype(s)) or s.nunique() <= 10
 
@@ -146,8 +151,6 @@ def main():
     ax.set_title("WoE scorecard: default rate by score band (2015)"); ax.legend()
     plt.xticks(rotation=45); plt.tight_layout()
     plt.savefig(FIG_DIR / "woe_score_bands.png", dpi=150); plt.close()
-    print(f"\nSaved scorecard, IV table, score bands, and chart to {FIG_DIR}")
-
-
+    log.info(f"Saved scorecard, IV table, score bands, and chart to {FIG_DIR}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

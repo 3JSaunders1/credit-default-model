@@ -17,6 +17,11 @@ RECAL_START = "2014-01-01"   # most recent vintage fully observed before 2015
 FEATURES = NUMERIC + CATEGORICAL
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def intercept_shift(p: np.ndarray, target_rate: float) -> float:
     """Find the log-odds shift b so the average adjusted PD equals target_rate."""
     z = logit(np.clip(p, 1e-6, 1 - 1e-6))
@@ -103,8 +108,6 @@ def main():
                 MODEL_DIR / "recalibration.joblib")
     comparison.to_csv(FIG_DIR / "recalibration_comparison.csv", index=False)
     after_strict.to_csv(FIG_DIR / "calibration_table_recalibrated.csv")
-    print(f"\nSaved comparison, plot, and recalibration to {FIG_DIR} and {MODEL_DIR}")
-
-
+    log.info(f"Saved comparison, plot, and recalibration to {FIG_DIR} and {MODEL_DIR}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

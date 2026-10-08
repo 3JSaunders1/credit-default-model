@@ -17,6 +17,11 @@ AUC_DROP = 0.03                     # review if AUC falls more than this
 CAL_GAP = 0.01                      # review if |actual - predicted| exceeds 1 pp
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def categorical_psi(expected: pd.Series, actual: pd.Series) -> float:
     """PSI for categorical or low-cardinality features, using category shares."""
     e = expected.astype(str).value_counts(normalize=True)
@@ -127,8 +132,6 @@ def main():
     q.to_csv(FIG_DIR / "monitoring_by_quarter.csv", index=False)
     feat.to_csv(FIG_DIR / "feature_psi.csv", index=False)
     plot_dashboard(q, base_auc)
-    print(f"\nSaved monitoring tables and dashboard to {FIG_DIR}")
-
-
+    log.info(f"Saved monitoring tables and dashboard to {FIG_DIR}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

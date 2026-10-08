@@ -5,6 +5,11 @@ from src.credit_default.config import ROOT, DATA_DIR
 from src.credit_default.download import find_accepted_file
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def main():
     raw_file = find_accepted_file()
     if raw_file is None:
@@ -27,8 +32,6 @@ def main():
 
     out = DATA_DIR / "processed" / "loans.parquet"
     con.execute(f"COPY loans TO '{out}' (FORMAT PARQUET)")
-    print(f"Saved {out}")
-
-
+    log.info(f"Saved {out}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

@@ -15,6 +15,11 @@ COLUMNS = {                       # column -> Spark type
 }
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def get_spark() -> SparkSession:
     return (SparkSession.builder
             .appName("credit-default")
@@ -60,9 +65,9 @@ def main():
                     F.round(F.avg("default_flag") * 100, 1).alias("default_rate_pct"))
                .orderBy("year"))
     summary.show(20)
-    print(f"Saved {out}")
+    log.info(f"Saved {out}")
     spark.stop()
 
 
 if __name__ == "__main__":
-    main()
+    run_main(main)

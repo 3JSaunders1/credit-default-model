@@ -12,6 +12,11 @@ THRESHOLDS = np.round(np.arange(0.05, 0.401, 0.025), 3)
 MAX_APPROVED_BAD_RATE = 0.10     # example policy: approved loans default at most 10%
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def confusion_at(y: np.ndarray, p: np.ndarray, t: float) -> tuple[int, int, int, int]:
     """Counts at threshold t, where PD >= t means 'predict default' (decline)."""
     pred = p >= t
@@ -75,8 +80,6 @@ def main():
     axes[1].set_xlabel("Approval rate (%)"); axes[1].set_ylabel("Default rate of approved loans (%)")
     axes[1].set_title("Approve/decline tradeoff"); axes[1].legend()
     plt.tight_layout(); plt.savefig(FIG_DIR / "threshold_analysis.png", dpi=150); plt.close()
-    print(f"\nSaved table and chart to {FIG_DIR}")
-
-
+    log.info(f"Saved table and chart to {FIG_DIR}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

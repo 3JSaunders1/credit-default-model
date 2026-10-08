@@ -9,6 +9,11 @@ FILE_NAME = "accepted_2007_to_2018Q4.csv.gz"   # exact name from `kaggle dataset
 RAW_DIR = DATA_DIR / "raw"
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def find_accepted_file() -> Path | None:
     """Return the accepted-loans file if it's already downloaded."""
     matches = sorted(RAW_DIR.rglob("accepted_2007_to_2018*.csv*"))
@@ -43,4 +48,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_main(main)

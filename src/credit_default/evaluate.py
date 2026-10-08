@@ -12,6 +12,11 @@ from src.credit_default.train import NUMERIC, CATEGORICAL, TARGET
 MODELS = {"pd_logit": "Logistic regression", "pd_xgb": "XGBoost"}
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def ks_stat(y, p) -> float:
     """Max gap between the cumulative score distributions of defaulters and non-defaulters."""
     fpr, tpr, _ = roc_curve(y, p)
@@ -84,8 +89,6 @@ def main():
 
     metrics.to_csv(FIG_DIR / "metrics.csv", index=False)
     cal.to_csv(FIG_DIR / "calibration_table.csv")
-    print(f"\nSaved figures and tables to {FIG_DIR}")
-
-
+    log.info(f"Saved figures and tables to {FIG_DIR}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

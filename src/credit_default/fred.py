@@ -20,6 +20,11 @@ STATES = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI"
           "WV", "WI", "WY"]
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def fetch_series(series_id: str) -> pd.DataFrame:
     params = {"series_id": series_id, "api_key": API_KEY,
               "file_type": "json", "observation_start": START}
@@ -64,8 +69,6 @@ def main():
 
     out = DATA_DIR / "processed" / "loans_macro.parquet"
     con.execute(f"COPY loans_macro TO '{out}' (FORMAT PARQUET)")
-    print(f"Saved {out}")
-
-
+    log.info(f"Saved {out}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

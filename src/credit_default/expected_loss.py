@@ -12,6 +12,11 @@ from src.credit_default.download import find_accepted_file
 from src.credit_default.train import TARGET
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def load_loss_outcomes() -> pd.DataFrame:
     """EAD and net recoveries for charged-off loans, read from the raw file."""
     raw_file = find_accepted_file()
@@ -107,8 +112,6 @@ def main():
     ax.set_xlabel("PD decile (1 = lowest risk)"); ax.set_ylabel("Loss as share of amount")
     ax.set_title("Expected vs. actual loss by PD decile (2015)"); ax.legend()
     plt.tight_layout(); plt.savefig(FIG_DIR / "expected_loss_deciles.png", dpi=150); plt.close()
-    print(f"\nSaved expected loss tables and chart to {FIG_DIR}")
-
-
+    log.info(f"Saved expected loss tables and chart to {FIG_DIR}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

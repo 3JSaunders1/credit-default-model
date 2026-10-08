@@ -10,6 +10,11 @@ from src.credit_default.evaluate import calibration_table
 MACRO = ["unemployment_rate", "fed_funds_rate", "state_unemp", "state_unemp_chg_12m"]
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def main():
     df = clean(pd.read_parquet(DATA_DIR / "processed" / "loans_macro.parquet"))
     train, test = split(df)
@@ -52,4 +57,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_main(main)

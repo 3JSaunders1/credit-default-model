@@ -27,6 +27,11 @@ DIRECTIONS = {
 }
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def dense(X):
     return X.toarray() if hasattr(X, "toarray") else X
 
@@ -119,8 +124,6 @@ def main():
     shap_analysis(prep, model, sample)
     partial_dependence(prep, model, sample)
     monotonic_model(prep, train, test, base_auc)
-    print(f"\nSaved explainability figures to {FIG_DIR}")
-
-
+    log.info(f"Saved explainability figures to {FIG_DIR}")
 if __name__ == "__main__":
-    main()
+    run_main(main)

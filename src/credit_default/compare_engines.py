@@ -3,6 +3,11 @@ import pandas as pd
 from src.credit_default.config import DATA_DIR
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def summarize(df: pd.DataFrame) -> pd.DataFrame:
     df = df.assign(year=pd.to_datetime(df["issue_date"]).dt.year)
     return df.groupby("year").agg(loans=("default_flag", "size"),
@@ -27,4 +32,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_main(main)

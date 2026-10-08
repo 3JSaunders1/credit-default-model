@@ -22,6 +22,11 @@ XGB_PARAMS = {"learning_rate": 0.05, "max_depth": 4,
 ES_SPLIT = "2014-01-01"   # early stopping: fit on 2012-2013, validate on 2014
 
 
+from src.credit_default.logging_utils import get_logger, run_main
+
+log = get_logger(__name__)
+
+
 def make_preprocessor(numeric: list[str] | None = None,
                       categorical: list[str] | None = None) -> ColumnTransformer:
     """Single source of truth for preprocessing, shared by every script."""
@@ -86,4 +91,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_main(main)

@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml/badge.svg)](https://github.com/3JSaunders1/credit-default-model/actions/workflows/tests.yml)
 
-An end-to-end credit risk model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: probability of default (PD) with out-of-time validation, discrimination and calibration metrics, an expected loss framework (PD × LGD × EAD) validated against realized losses, time-aware hyperparameter tuning, a Weight of Evidence scorecard, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, threshold analysis for approve/decline decisions, automated tests, a Docker image, and an honest account of limitations.
+An end-to-end credit risk model built on Lending Club loan data, developed and evaluated the way a bank would evaluate a credit model before relying on it: probability of default (PD) with out-of-time validation, discrimination and calibration metrics, an expected loss framework (PD × LGD × EAD) validated against realized losses, time-aware hyperparameter tuning, a Weight of Evidence scorecard, quarterly population stability and performance monitoring, recalibration, macroeconomic features from the FRED API, explainability, a PySpark implementation reconciled against SQL, threshold analysis for approve/decline decisions, automated tests, structured logging, a Docker image, and an honest account of limitations.
 
 ---
 
@@ -25,7 +25,7 @@ An end-to-end credit risk model built on Lending Club loan data, developed and e
 | **Macro features** | Cut the calibration gap roughly in half (14.1% vs. 14.9% actual), but national unemployment showed a counterintuitive, cycle-driven sign that should not be trusted in production |
 | **Explainability** | Drivers match credit intuition (loan purpose, FICO, renting, inquiries, loan-to-income, DTI), with SHAP reason codes for individual loans |
 | **Scaling** | The data pipeline is also implemented in **PySpark**, reconciled against the DuckDB SQL version across 1,020,743 loans with **zero discrepancies** |
-| **Engineering** | 46 automated tests run on every push, a Docker image for one-command reproducibility, shared preprocessing and model settings across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
+| **Engineering** | 49 automated tests run on every push, a Docker image for one-command reproducibility, structured logging with step timing and failure handling, shared preprocessing and model settings across scripts, pinned dependencies, a one-command pipeline, and timestamped run archives |
 
 ---
 
@@ -41,7 +41,7 @@ The project emphasizes:
 - **Monitoring**: tracking inputs, ranking, and calibration over time to understand whether performance changes come from data drift or concept drift.
 - **Explainability**: making model behavior transparent and defensible, as lenders must be able to explain credit decisions.
 - **Questioning results**: testing whether an improvement is trustworthy, not just whether a metric went up.
-- **Reproducibility**: tests, pinned dependencies, a Docker image, and archived runs, so every result can be traced and rerun.
+- **Reproducibility**: tests, pinned dependencies, a Docker image, logging, and archived runs, so every result can be traced and rerun.
 
 This complements my [Macro-Driven Credit Risk Lab](https://github.com/3JSaunders1/macro-credit-risk-lab), which models how macroeconomic conditions drive credit risk. This project focuses on borrower-level default prediction and loss estimation.
 
@@ -554,8 +554,18 @@ make docker-run      # run the full pipeline in a container, using local data an
 
 Data, models, and credentials are never copied into the image (`.dockerignore` excludes them). Instead, `docker-run` mounts the local `data/`, `models/`, and `reports/` folders, the Kaggle token (read-only), and the `.env` file at runtime.
 
+### Logging
+Every pipeline step uses a shared logging setup (`logging_utils.py`):
+
+- **Timestamped, labeled messages**, such as `21:14:03 | INFO | thresholds | Saved table and chart to reports/figures`
+- **Step timing:** each step logs when it starts and how long it took
+- **Clean failures:** an error logs its full traceback and exits with a nonzero code, so `make all` stops instead of continuing with bad outputs
+- **Adjustable detail:** set `LOG_LEVEL` (for example, `LOG_LEVEL=WARNING make all`) to change verbosity without editing code
+
+Results tables are still printed as each step's report; logging covers operational events. Logs go to standard output, so each run's `run_log.txt` captures them alongside the results.
+
 ### Automated tests
-**46 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
+**49 tests** (`tests/`) run locally with `make test` and automatically on every push through **GitHub Actions**, which sets up Python 3.11 and Java 17:
 
 | Test file | What it checks |
 |---|---|
@@ -567,6 +577,7 @@ Data, models, and credentials are never copied into the image (`.dockerignore` e
 | `test_tuning.py` | Every cross-validation fold trains only on loans issued before its validation period, and sampled hyperparameters stay within range |
 | `test_expected_loss.py` | Full recovery means zero LGD and no recovery means full LGD; loans with no exposure are dropped; LGD and EAD ratios stay between 0 and 1; expected loss equals PD × LGD × EAD |
 | `test_thresholds.py` | Confusion-matrix counts add up, a perfectly separating model has precision and recall of 1, approval rates rise with the threshold, and the selected policy respects its default-rate cap |
+| `test_logging.py` | Each pipeline step logs its start and duration, a failing step logs its traceback and exits with code 1, and loggers use short module names |
 | `test_features.py` | Employment length parsing, missing indicators, safe handling of zero income, and no modification of input data |
 | `test_spark_pipeline.py` | The Spark pipeline keeps only completed 36-month loans, sets the default flag correctly, and parses issue dates |
 | `test_preprocessing.py` | Every script uses the same preprocessing definition, so encoder settings can't drift between model comparisons |
@@ -582,7 +593,7 @@ reports/
 └── runs/
     └── YYYYMMDD_HHMMSS/
         ├── run_info.txt      # run ID, Git commit, and the full config used
-        ├── run_log.txt       # all printed output from every step
+        ├── run_log.txt       # all logs and printed output from every step
         └── ...               # every figure and table from that run
 ```
 
@@ -653,6 +664,7 @@ credit_default_model_project/
 │   └── 03_loss_outcomes.sql   # EAD and recoveries for charged-off loans (outcomes only)
 ├── src/credit_default/
 │   ├── config.py              # paths, target definition, split dates, seed
+│   ├── logging_utils.py       # shared logging setup: timestamps, levels, step timing, failures
 │   ├── download.py            # Kaggle API download
 │   ├── data.py                # SQL load into DuckDB
 │   ├── features.py            # cleaning, features, out-of-time split
@@ -673,6 +685,7 @@ credit_default_model_project/
 │   ├── test_expected_loss.py
 │   ├── test_features.py
 │   ├── test_leakage.py
+│   ├── test_logging.py
 │   ├── test_metrics.py
 │   ├── test_monitor.py
 │   ├── test_preprocessing.py
@@ -682,7 +695,8 @@ credit_default_model_project/
 │   ├── test_tuning.py
 │   └── test_woe.py
 ├── tools/
-│   └── export_codebase.py     # prints the project tree and saves code snapshots
+│   ├── export_codebase.py     # prints the project tree and saves code snapshots
+│   └── add_logging.py         # one-time refactor that added logging to every module
 ├── .dockerignore              # keeps data, models, and secrets out of the image
 ├── Dockerfile                 # reproducible environment: Python 3.11 + Java 17
 ├── LICENSE
@@ -717,7 +731,7 @@ make download
 ```bash
 make all
 ```
-This builds the data, trains and evaluates the models, runs the threshold analysis, recalibrates, adds macro features, runs explainability, the monitoring report, the WoE scorecard, and the expected loss analysis, and archives everything to `reports/runs/<timestamp>/`.
+This builds the data, trains and evaluates the models, runs the threshold analysis, recalibrates, adds macro features, runs explainability, the monitoring report, the WoE scorecard, and the expected loss analysis, and archives everything to `reports/runs/<timestamp>/`. Set `LOG_LEVEL=WARNING` for quieter output.
 
 **5. Run hyperparameter tuning (optional, about 20–30 minutes)**
 ```bash
