@@ -560,6 +560,9 @@ Every pipeline step uses a shared logging setup (`logging_utils.py`):
 - **Timestamped, labeled messages**, such as `21:14:03 | INFO | thresholds | Saved table and chart to reports/figures`
 - **Step timing:** each step logs when it starts and how long it took
 - **Clean failures:** an error logs its full traceback and exits with a nonzero code, so `make all` stops instead of continuing with bad outputs
+
+Each logged step in the Makefile runs with `set -o pipefail`, so a failing step stops `make all` even though its output is piped to `tee`. (This is set per command because macOS ships GNU Make 3.81, which ignores `.SHELLFLAGS`.)
+
 - **Adjustable detail:** set `LOG_LEVEL` (for example, `LOG_LEVEL=WARNING make all`) to change verbosity without editing code
 
 Results tables are still printed as each step's report; logging covers operational events. Logs go to standard output, so each run's `run_log.txt` captures them alongside the results.

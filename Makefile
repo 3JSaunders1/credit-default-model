@@ -1,5 +1,4 @@
 SHELL := /bin/bash
-.SHELLFLAGS := -o pipefail -c
 
 RUN_ID  := $(shell date +%Y%m%d_%H%M%S)
 RUN_DIR := reports/runs/$(RUN_ID)
@@ -17,45 +16,45 @@ download:
 	python -m src.credit_default.download
 
 data: run-dir
-	python -m src.credit_default.data 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.data 2>&1 | tee -a $(LOG)
 
 features: run-dir
-	python -m src.credit_default.features 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.features 2>&1 | tee -a $(LOG)
 
 train: run-dir
-	python -m src.credit_default.train 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.train 2>&1 | tee -a $(LOG)
 
 evaluate: run-dir
-	python -m src.credit_default.evaluate 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.evaluate 2>&1 | tee -a $(LOG)
 
 thresholds: run-dir
-	python -m src.credit_default.thresholds 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.thresholds 2>&1 | tee -a $(LOG)
 
 recalibrate: run-dir
-	python -m src.credit_default.recalibrate 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.recalibrate 2>&1 | tee -a $(LOG)
 
 macro: run-dir
-	python -m src.credit_default.fred 2>&1 | tee -a $(LOG)
-	python -m src.credit_default.compare_macro 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.fred 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.compare_macro 2>&1 | tee -a $(LOG)
 
 explain: run-dir
-	python -m src.credit_default.explain 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.explain 2>&1 | tee -a $(LOG)
 
 monitor: run-dir
-	python -m src.credit_default.monitor 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.monitor 2>&1 | tee -a $(LOG)
 
 woe: run-dir
-	python -m src.credit_default.woe 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.woe 2>&1 | tee -a $(LOG)
 
 el: run-dir
-	python -m src.credit_default.expected_loss 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.expected_loss 2>&1 | tee -a $(LOG)
 
 tune: run-dir
-	python -m src.credit_default.tune 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.tune 2>&1 | tee -a $(LOG)
 
 spark: run-dir
-	python -m src.credit_default.spark_pipeline 2>&1 | tee -a $(LOG)
-	python -m src.credit_default.compare_engines 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.spark_pipeline 2>&1 | tee -a $(LOG)
+	set -o pipefail; python -m src.credit_default.compare_engines 2>&1 | tee -a $(LOG)
 
 archive: run-dir
 	cp reports/figures/* $(RUN_DIR)/
