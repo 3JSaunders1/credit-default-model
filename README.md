@@ -43,7 +43,7 @@ The project emphasizes:
 - **Questioning results**: testing whether an improvement is trustworthy, not just whether a metric went up.
 - **Reproducibility**: tests, pinned dependencies, a Docker image, logging, and archived runs, so every result can be traced and rerun.
 
-This complements my [Macro-Driven Credit Risk Lab](https://github.com/3JSaunders1/macro-credit-risk-lab), which models how macroeconomic conditions drive credit risk. This project focuses on borrower-level default prediction and loss estimation.
+This complements my [Macro-Driven Credit Risk Lab](https://github.com/3JSaunders1/macro-credit-risk-lab), which models how macroeconomic conditions drive credit risk. This project focuses on borrower-level default prediction and loss estimation. The two are linked in my [Credit Risk Platform](https://github.com/3JSaunders1/credit-risk-platform), which runs the macro lab's stress scenarios through this model's loan-level PDs to estimate portfolio losses under recession scenarios.
 
 ---
 
@@ -633,7 +633,7 @@ This makes every result traceable to the exact code and settings that produced i
 **Credit cycle and macro modeling**
 - Model the credit cycle explicitly, for example with **vintage effects** or underwriting-cycle indicators, rather than relying on national unemployment as a proxy.
 - Train on data that spans a **full credit cycle**, such as the Freddie Mac Single-Family Loan-Level Dataset covering 2008 and 2020, so macro relationships are estimated across both downturns and recoveries.
-- Link to the **Macro-Driven Credit Risk Lab** so macroeconomic stress scenarios flow through PD to stressed expected losses.
+- ✅ **Linked to the Macro-Driven Credit Risk Lab** in the [Credit Risk Platform](https://github.com/3JSaunders1/credit-risk-platform): macro stress scenarios shift this model's recalibrated PDs to produce stressed expected losses for the 2015 portfolio, from $238.6M at baseline to $322.2M under the Severely Adverse scenario. A natural next step is borrower-level macro sensitivity, so different segments respond differently to the same scenario.
 
 **Modeling**
 - **Segment-level LGD and EAD models**, for example by loan purpose, FICO band, or loan size, and **lifetime loss timing and discounting** for a fuller CECL-style estimate.
